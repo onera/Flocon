@@ -5,17 +5,23 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse, Polygon
 #
 from ..simulators import TimeDomainSimulator
+from ..simulators import simulators as sim
+
 
 CLASS_DIR       = os.path.dirname(__file__)
+WORKING_DIR     = os.path.join(CLASS_DIR, '.work')
 # Meshes associated with the geometry
 MESH_DIR        = os.path.join(CLASS_DIR, 'meshes')
-COARSE_MESH     = os.path.join(MESH_DIR, 'coarse_mesh.msh')
-FINE_MESH       = os.path.join(MESH_DIR, 'fine_mesh.msh')
+COARSE_MESH     = os.path.join(MESH_DIR, 'coarse.msh')
+FINE_MESH       = os.path.join(MESH_DIR, 'fine.msh')
 # Templates for the .edp files
-TEMPLATE_DIR    = os.path.join(CLASS_DIR, 'edp_template')
-EDP_HEAD        = os.path.join(TEMPLATE_DIR, 'head')
-EDP_BASEFLOW    = os.path.join(TEMPLATE_DIR, 'baseflow')
-EDP_OPENLOOP    = os.path.join(TEMPLATE_DIR, 'openloop')
+TEMPLATE_DIR        = os.path.join(CLASS_DIR, 'edp_templates')
+TEMPLATE_HEAD       = os.path.join(TEMPLATE_DIR, 'head')
+TEMPLATE_BASEFLOW   = os.path.join(TEMPLATE_DIR, 'baseflow')
+TEMPLATE_OPENLOOP   = os.path.join(TEMPLATE_DIR, 'openloop')
+BASEFLOW_EDP        = os.path.join(WORKING_DIR,'baseflow.edp')
+BASEFLOW_CONV       = os.path.join(WORKING_DIR, 'baseflow_conv')
+BASEFLOW_DATA       = os.path.join(WORKING_DIR, 'baseflow_data')
 # Geometry of the step
 ymax            =  1.0
 ymin            = -1.0
@@ -27,11 +33,16 @@ class Step(TimeDomainSimulator):
         self.DATABASE_FILE = os.path.join(CLASS_DIR,'STEP.db')
         # Initialise database and default parameters for the benchmark
         self.main_init()
+        # Initialise database tables
+        self.create_table('baseflow',['Re real', 'dt real', 'N real', 'mesh text', 'data array'])
+        # Create working temp directory if it does not exists
+        if not os.path.exists(WORKING_DIR):
+            os.mkdir(WORKING_DIR)
 
     def init_default_parameters(self):
         self.name       = 'default'
         # Physical parameters ans setting
-        self.Re         = 100
+        self.Re         = 100.0
         # Control input(s)
         self.actuators  = []
         act             = GaussianIO(-0.05, 0.01, 0.01, 0.1)
@@ -49,10 +60,10 @@ class Step(TimeDomainSimulator):
         down_sens       = BorderIntegralIO([10.3, 10.7],'bottom')
         self.add_to_list(self.perf, down_sens)
         # Simulation parameter
-        self.mesh       = COARSE_MESH   # mesh to be used
-        self.N          = 250000        # number of iterations
-        self.dt         = 0.002         # integration time step
-        self.NL         = False         # activation of non-linear term
+        self.mesh       = 'coarse'   # mesh to be used
+        self.N          = 250000     # number of iterations
+        self.dt         = 0.002      # integration time step
+        self.NL         = False      # activation of non-linear term
 
     def add_to_list(self, li, e):
         if e.outside(xmin, xmax, ymin, ymax):
@@ -60,6 +71,66 @@ class Step(TimeDomainSimulator):
             return
         li.append(e)
 
+    @property
+    def tf(self):
+        return self.N * self.dt
+
+    @tf.setter
+    def tf(self, t):
+        self.N = int(round(t/self.dt,0))
+        print('Number of iterations changed to {}'.format(self.N))
+
+    @property
+    def mesh_file(self):
+        if self.mesh=='coarse':
+            return COARSE_MESH
+        elif self.mesh=='fine':
+            return FINE_MESH
+    # --------------------------------------------------------------------------
+    # BASE FLOW
+    # --------------------------------------------------------------------------
+    def compute_baseflow(self, force=False):
+        # Attempt to read base-flow data
+        data = self.get_base_flow_data()
+        if data and not force:
+            return data
+        # Otherwise, data must be computed
+        file = self.make_baseflow_edp_file()
+
+    def get_baseflow_data(self):
+        data    = []
+        c       = self.db.cursor()
+        c.execute('SELECT data FROM baseflow WHERE Re=? AND dt=? AND N=? AND mesh=?',
+                  (self.Re, self.dt, self.N, self.mesh))
+        if c.fetchone():
+            data = c.fetchone()
+        return data
+
+    def save_baseflow_data(self, data):
+        c = self.db.cursor()
+        c.execute('INSERT INTO baseflow VALUES (?,?,?,?,?)',
+                  (self.Re, self.dt, self.N, self.mesh, data))
+        self.db.commit()
+
+    def get_placeholders(self):
+        ph = {'MESH':self.mesh_file,
+              'BASEFLOW_CONV': BASEFLOW_CONV,
+              'BASEFLOW_DATA': BASEFLOW_DATA}
+        return ph
+
+    def make_baseflow_edp_file(self):
+        # Read associated EDP template
+        head_temp       = sim.read_template(TEMPLATE_HEAD)
+        baseflow_temp   = sim.read_template(TEMPLATE_BASEFLOW)
+        #
+        content = head_temp + '\n' + sim.assign_freefem_var('Re', self.Re) + '\n' + baseflow_temp
+        content = sim.replace_placeholders(self.get_placeholders(), content)
+        #
+        sim.write_file(BASEFLOW_EDP, content)
+        return content
+    # --------------------------------------------------------------------------
+    # PLOTING
+    # --------------------------------------------------------------------------
     def plot_config(self):
         [fig, ax]   = plt.subplots()
         # Numerical setup
@@ -100,15 +171,6 @@ class Step(TimeDomainSimulator):
         ax.set_ylim(-4,5)
         plt.title('Step use-case \"%s\"' %(self.name))
         plt.show()
-
-    @property
-    def tf(self):
-        return self.N * self.dt
-
-    @tf.setter
-    def tf(self, t):
-        self.N = int(round(t/self.dt,0))
-        print('Number of iterations changed to {}'.format(self.N))
 
 def plot_io(plt, ax, side, li, id, x, y , dy, col):
     if side =='left':

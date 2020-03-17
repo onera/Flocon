@@ -1,0 +1,65 @@
+// output file for convergence history
+string outfile="@BASEFLOW_CONV";
+{
+	ofstream file(outfile);
+};
+Uvvp [ub1,ub2,pb]; ub1[]=0; // Base-flow variable
+real nu=1./Re;              // kinematic viscosity
+real normdu=1,resl2;        //
+int iter=0; 								// iteration
+// Newton iteration until delta u is 0
+while(normdu > 1.e-14)
+{
+	iter +=  1;
+	//
+  matrix NSMAT;
+	{
+	 varf NS([du1,du2,dp],[v1,v2,q])	        // Jacobian operator
+	 = int2d(th)(
+				+ nu*(dx(du1)*dx(v1)+dy(du1)*dy(v1)
+				+ dx(du2)*dx(v2)+dy(du2)*dy(v2))
+				+ v1*(du1*dx(ub1)+du2*dy(ub1)+ub1*dx(du1)+ub2*dy(du1))
+				+ v2*(du1*dx(ub2)+du2*dy(ub2)+ub1*dx(du2)+ub2*dy(du2))
+				- dp*(dx(v1)+dy(v2))
+				+ q*(dx(du1)+dy(du2)))
+			  + on(1,du1=4.*(y-y^2)-ub1,du2=-ub2)	// Poiseuille inflow
+			  + on(2,du1=-ub1,du2=-ub2);			    // No-slip on upper and lower boundaries
+		NSMAT=NS(Uvvp,Uvvp,solver=sparsesolver);
+	};
+
+  //
+	Uvvp [r1,r2,r3];
+	{
+	 varf SMNS([du1,du2,dp],[v1,v2,q])	      // Steady Navier-Stokes equations
+	 = int2d(th)(
+        - nu*(dx(ub1)*dx(v1)+dy(ub1)*dy(v1)
+			  + dx(ub2)*dx(v2)+dy(ub2)*dy(v2))
+				- v1*(ub1*dx(ub1)+ub2*dy(ub1))
+				- v2*(ub1*dx(ub2)+ub2*dy(ub2))
+				+ pb*(dx(v1)+dy(v2))
+				- q*(dx(ub1)+dy(ub2)))
+			  + on(1,du1=4.*(y-y^2)-ub1,du2=-ub2)	// Poiseuille inflow
+			  + on(2,du1=-ub1,du2=-ub2);			    // No-slip on upper and lower boundaries
+			r1[]=SMNS(0,Uvvp);
+			resl2=r1[].l2;	// 2-norm
+	};
+  // Solution update
+	{
+		Uvvp [du1,du2,dp];
+		du1[]  = NSMAT^-1*r1[];                         // computation of delta u
+		normdu = sqrt(int2d(th)(du1^2+du2^2)/th.area);  // norm of delta u
+		ub1[]+=du1[];                                   // baseflow update
+	};
+  //  Writing to convergence file
+	{
+		cout << iter << "  " << resl2 << " " << normdu << endl;
+		ofstream file(outfile,append);
+		file << iter << "  " << resl2 << " " << normdu << endl;
+	};
+}; // end of while loop
+
+{
+	ofstream file("@BASEFLOW_DATA");
+	file.precision(16);
+	file << ub1[];
+};

@@ -1,1 +1,1 @@
-from .tdsimulator import TimeDomainSimulator
+from .simulators import TimeDomainSimulator

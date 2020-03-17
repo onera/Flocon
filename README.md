@@ -1,11 +1,11 @@
 # Flocon
 
-Flocon is a benchmark library aimed at gathering *realistic* flow control problems.
+Flocon is an open-source benchmark library aimed at gathering *realistic* flow control problems.
 
 These benchmarks are built to be relevant for various topics such as model reduction/identification, actuators/sensors placement, control synthesis and its implantation.
-In particular, each benchmark can be modified (e.g. number, position and nature of actuators/sensors) to highlight some specific point.
+For that purpose, each benchmark can be modified (e.g. number, position and nature of actuators/sensors) to highlight some specific point.
 
-The library is implemented in python but the core of each benchmark may rely on another language, e.g. for simulation.  
+The library is implemented in python but the core of each benchmark may rely on another language, e.g. for simulation. Specific requirements are indicated in the associated README files.
 
 ## Available benchmarks
 
