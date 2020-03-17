@@ -95,7 +95,12 @@ class Step(TimeDomainSimulator):
         if data and not force:
             return data
         # Otherwise, data must be computed
-        file = self.make_baseflow_edp_file()
+        content = self.make_baseflow_edp_file()
+        # simulate edp file
+        sim.launch_edp_file(BASEFLOW_EDP)
+        if self.baseflow_has_converged():
+            data = freefem_data_file_to_np(BASEFLOW_DATA)
+            self.store_baseflow_data(data)
 
     def get_baseflow_data(self):
         data    = []
@@ -106,7 +111,7 @@ class Step(TimeDomainSimulator):
             data = c.fetchone()
         return data
 
-    def save_baseflow_data(self, data):
+    def store_baseflow_data(self, data):
         c = self.db.cursor()
         c.execute('INSERT INTO baseflow VALUES (?,?,?,?,?)',
                   (self.Re, self.dt, self.N, self.mesh, data))

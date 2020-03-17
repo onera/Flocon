@@ -48,7 +48,7 @@ while(normdu > 1.e-14)
 		Uvvp [du1,du2,dp];
 		du1[]  = NSMAT^-1*r1[];                         // computation of delta u
 		normdu = sqrt(int2d(th)(du1^2+du2^2)/th.area);  // norm of delta u
-		ub1[]+=du1[];                                   // baseflow update
+		ub1[] += du1[];                                 // baseflow update
 	};
   //  Writing to convergence file
 	{

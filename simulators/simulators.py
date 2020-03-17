@@ -56,8 +56,27 @@ class TimeDomainSimulator(Simulator):
     pass
 
 # ------------------------------------------------------------------------------
+# External file
+# ------------------------------------------------------------------------------
+def write_file(target, content):
+    f       = open(target, 'w+')
+    f.write(content)
+    f.close()
+
+def read_template(target):
+    f       = open(target, 'r')
+    str     = f.read()
+    f.close()
+    return str
+# ------------------------------------------------------------------------------
 # EDP interface
 # ------------------------------------------------------------------------------
+def launch_edp_file(target):
+    os.system('FreeFem++ -nw {} > log'.format(target))
+
+def freefem_data_file_to_np(file):
+    return np.loadtxt(file,skiprows=1)
+
 def assign_freefem_var(name, val):
     if type(val) == bool:
         typ = 'bool'
@@ -71,12 +90,6 @@ def assign_freefem_var(name, val):
         return ''
     return '{} {} = {};\n'.format(typ, name, val)
 
-def read_template(target):
-    f       = open(target, 'r')
-    str     = f.read()
-    f.close()
-    return str
-
 def replace_placeholders(ph_list, str):
     for ph_name, path_str in ph_list.items():
         # path_str = os.path.join('.',*ph_val)
@@ -84,8 +97,3 @@ def replace_placeholders(ph_list, str):
             path_str = path_str.replace('\\','\\\\')
         str = str.replace('@'+ph_name, path_str)
     return str
-
-def write_file(target, content):
-    f       = open(target, 'w+')
-    f.write(content)
-    f.close()
