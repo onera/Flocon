@@ -13,7 +13,7 @@ The list of benchmarks will be completed progressively.
 
 |   Name     | Description                                        |  Simulator |
 |-----------:|:---------------------------------------------------|:----------:|
-|   `step`   | The system is an amplifier and the control goal is disturbance rejection. See [this page](step/README.md).|  FreeFem++ |
+|   `step`   | The system is an amplifier and the control goal is disturbance rejection. See [this page](step).|  FreeFem++ |
 
 *Remark: If you have a flow problem that you would like to be integrated in this library, contact us to discuss about it.*
 
