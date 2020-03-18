@@ -1,3 +1,10 @@
+load "MUMPS_seq"
+defaulttoMUMPSseq();
+
+mesh th=readmesh("@MESH");
+
+fespace Uvvp(th,[P2,P2,P1]);
+
 // output file for convergence history
 string outfile="@BASEFLOW_CONV";
 {
@@ -10,7 +17,7 @@ int iter=0; 								// iteration
 // Newton iteration until delta u is 0
 while(normdu > 1.e-14)
 {
-	iter +=  1;
+	iter++;
 	//
   matrix NSMAT;
 	{

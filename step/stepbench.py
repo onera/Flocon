@@ -16,7 +16,6 @@ COARSE_MESH     = os.path.join(MESH_DIR, 'coarse.msh')
 FINE_MESH       = os.path.join(MESH_DIR, 'fine.msh')
 # Templates for the .edp files
 TEMPLATE_DIR        = os.path.join(CLASS_DIR, 'edp_templates')
-TEMPLATE_HEAD       = os.path.join(TEMPLATE_DIR, 'head')
 TEMPLATE_BASEFLOW   = os.path.join(TEMPLATE_DIR, 'baseflow')
 TEMPLATE_OPENLOOP   = os.path.join(TEMPLATE_DIR, 'openloop')
 BASEFLOW_EDP        = os.path.join(WORKING_DIR,'baseflow.edp')
@@ -91,16 +90,16 @@ class Step(TimeDomainSimulator):
     # --------------------------------------------------------------------------
     def compute_baseflow(self, force=False):
         # Attempt to read base-flow data
-        data = self.get_base_flow_data()
+        data = self.get_baseflow_data()
         if data and not force:
             return data
         # Otherwise, data must be computed
         content = self.make_baseflow_edp_file()
         # simulate edp file
         sim.launch_edp_file(BASEFLOW_EDP)
-        if self.baseflow_has_converged():
-            data = freefem_data_file_to_np(BASEFLOW_DATA)
-            self.store_baseflow_data(data)
+        # if self.baseflow_has_converged():
+            # data = freefem_data_file_to_np(BASEFLOW_DATA)
+            # self.store_baseflow_data(data)
 
     def get_baseflow_data(self):
         data    = []
@@ -125,10 +124,11 @@ class Step(TimeDomainSimulator):
 
     def make_baseflow_edp_file(self):
         # Read associated EDP template
-        head_temp       = sim.read_template(TEMPLATE_HEAD)
         baseflow_temp   = sim.read_template(TEMPLATE_BASEFLOW)
         #
-        content = head_temp + '\n' + sim.assign_freefem_var('Re', self.Re) + '\n' + baseflow_temp
+        content = '// Configuration parameters declaration, case \'%s\'\n' %(self.name)
+        content = content + sim.assign_freefem_var('Re', self.Re)
+        content = content + '\n// End of parameters declaration \n' + baseflow_temp
         content = sim.replace_placeholders(self.get_placeholders(), content)
         #
         sim.write_file(BASEFLOW_EDP, content)
