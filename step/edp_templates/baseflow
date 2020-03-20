@@ -5,17 +5,22 @@ mesh th=readmesh("@MESH");
 
 fespace Uvvp(th,[P2,P2,P1]);
 
-// output file for convergence history
-string outfile="@BASEFLOW_CONV";
-{
-	ofstream file(outfile);
-};
-Uvvp [ub1,ub2,pb]; ub1[]=0; // Base-flow variable
-real nu=1./Re;              // kinematic viscosity
-real normdu=1,resl2;        //
-int iter=0; 								// iteration
+
+Uvvp [ub1,ub2,pb];// Base-flow variable
+if (isRestart){
+	ifstream previousSol("@BASEFLOW_OTHER_DATA");
+	previousSol >> ub1[];
+}
+else{
+	ub1[]=0;
+}
+real nu			= 1./Re;        // kinematic viscosity
+real normdu	= 1,resl2;      //
+int iter		= 0; 						// iteration
+int maxIter = 15;						// maximum number of iterations
+real tol 		= 1e-14; 			// convergence tolerance
 // Newton iteration until delta u is 0
-while(normdu > 1.e-14)
+while(iter <= maxIter)
 {
 	iter++;
 	//
@@ -57,16 +62,29 @@ while(normdu > 1.e-14)
 		normdu = sqrt(int2d(th)(du1^2+du2^2)/th.area);  // norm of delta u
 		ub1[] += du1[];                                 // baseflow update
 	};
-  //  Writing to convergence file
+	//
 	{
-		cout << iter << "  " << resl2 << " " << normdu << endl;
-		ofstream file(outfile,append);
-		file << iter << "  " << resl2 << " " << normdu << endl;
+	cout << "iter #" << iter <<", || delta u || = " << normdu << endl;
 	};
+	// Test for convergence
+	if (normdu < tol) break;
 }; // end of while loop
 
+// Baseflow data
+if (normdu < tol){
+	{
+		ofstream datafile("@BASEFLOW_DATA");
+		datafile.precision(16);
+		datafile << ub1[];
+	};
+}
+// Convergence Flag
 {
-	ofstream file("@BASEFLOW_DATA");
-	file.precision(16);
-	file << ub1[];
+		ofstream convfile("@BASEFLOW_CONV");
+		if (normdu < tol){
+			convfile <<1;
+		}
+		else{
+			convfile << 0;
+		}
 };

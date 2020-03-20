@@ -12,6 +12,7 @@ CLASS_DIR       = os.path.dirname(__file__)
 WORKING_DIR     = os.path.join(CLASS_DIR, '.work')
 # Meshes associated with the geometry
 MESH_DIR        = os.path.join(CLASS_DIR, 'meshes')
+TEST_MESH       = os.path.join(MESH_DIR, 'test.msh')
 COARSE_MESH     = os.path.join(MESH_DIR, 'coarse.msh')
 FINE_MESH       = os.path.join(MESH_DIR, 'fine.msh')
 # Templates for the .edp files
@@ -21,6 +22,8 @@ TEMPLATE_OPENLOOP   = os.path.join(TEMPLATE_DIR, 'openloop')
 BASEFLOW_EDP        = os.path.join(WORKING_DIR,'baseflow.edp')
 BASEFLOW_CONV       = os.path.join(WORKING_DIR, 'baseflow_conv')
 BASEFLOW_DATA       = os.path.join(WORKING_DIR, 'baseflow_data')
+BASEFLOW_OTHER_DATA = os.path.join(WORKING_DIR, 'baseflow_other_data')
+
 # Geometry of the step
 ymax            =  1.0
 ymin            = -1.0
@@ -33,7 +36,7 @@ class Step(TimeDomainSimulator):
         # Initialise database and default parameters for the benchmark
         self.main_init()
         # Initialise database tables
-        self.create_table('baseflow',['Re real', 'dt real', 'N real', 'mesh text', 'data array'])
+        self.create_table('baseflow',['Re real', 'dt real', 'N real', 'mesh text', 'data text'])
         # Create working temp directory if it does not exists
         if not os.path.exists(WORKING_DIR):
             os.mkdir(WORKING_DIR)
@@ -59,7 +62,7 @@ class Step(TimeDomainSimulator):
         down_sens       = BorderIntegralIO([10.3, 10.7],'bottom')
         self.add_to_list(self.perf, down_sens)
         # Simulation parameter
-        self.mesh       = 'coarse'   # mesh to be used
+        self.mesh       = 'test'   # mesh to be used
         self.N          = 250000     # number of iterations
         self.dt         = 0.002      # integration time step
         self.NL         = False      # activation of non-linear term
@@ -85,54 +88,134 @@ class Step(TimeDomainSimulator):
             return COARSE_MESH
         elif self.mesh=='fine':
             return FINE_MESH
+        elif self.mesh=='test':
+            return TEST_MESH
+
+
+    @property
+    def reduced_id(self):
+        return '[%.1f,%d,%.3f,%s]'%(self.Re, self.N, self.dt, self.mesh)
     # --------------------------------------------------------------------------
     # BASE FLOW
     # --------------------------------------------------------------------------
-    def compute_baseflow(self, force=False):
+    def compute_baseflow(self, force=False, store=True):
         # Attempt to read base-flow data
         data = self.get_baseflow_data()
         if data and not force:
+            self.print_msg('Base-flow data already in DB. Returning...')
             return data
+        self.print_msg('Base-flow data not in DB. Starting computation...')
         # Otherwise, data must be computed
-        content = self.make_baseflow_edp_file()
-        # simulate edp file
+        target_Re = self.Re
+        # Try to find the closest possible baseflow with existing data to
+        # initialise the computation
+        self.print_msg('Looking for closest existing base-flow...')
+        other = self.get_closest_other()
+        if other:
+            self.print_msg('Closest base-flow found. Restarting from ' + other.reduced_id)
+            # if the data exists, write it to the baseflow_data file
+            other_data = other.get_baseflow_data()
+            sim.write_file(BASEFLOW_OTHER_DATA, other_data)
+            is_restart = True
+        else:
+            is_restart = False
+            self.print_msg('No existing base-flow found. No restart...')
+        # Create the EDP file for baseflow computation
+        self.make_baseflow_edp_file(is_restart)
+        # Launch simulation
+        self.print_msg('Launching simulation for base-flow computation...')
+        self.clean_temp_files()
         sim.launch_edp_file(BASEFLOW_EDP)
-        # if self.baseflow_has_converged():
-            # data = freefem_data_file_to_np(BASEFLOW_DATA)
-            # self.store_baseflow_data(data)
+        if self.baseflow_has_converged():
+            self.print_msg('Base-flow has converged...')
+            data = sim.file_to_str(BASEFLOW_DATA)
+            if store:
+                self.print_msg('Storing base-flow...')
+                self.store_baseflow_data(data)
+            return data
+        # Simulation has not converged
+        self.print_msg('Base-flow has not converged...')
+        if other:
+            # if it was a restart, an intermediate Re is considered
+            target_Re       = self.Re
+            self.Re         =  0.5*(self.Re + other.Re)
+            self.print_msg('Considering intermediate Re=%.1f' %(self.Re))
+            self.compute_baseflow()
+            self.Re         = target_Re
+            return self.compute_baseflow()
+        else:
+            # it was not a restart, decrease the Re
+            target_Re   = self.Re
+            self.Re     = self.Re/2
+            self.print_msg('Decreasing Re to %.1f' %(self.Re))
+            # And attempt to compute baseflow
+            self.compute_baseflow()
+            # then retry for target_Re
+            self.Re     = target_Re
+            return self.compute_baseflow()
+
+    def clean_temp_files(self):
+        if os.path.exists(BASEFLOW_CONV):
+            os.system('rm '+ BASEFLOW_CONV)
+        if os.path.exists(BASEFLOW_DATA):
+            os.system('rm '+ BASEFLOW_DATA)
+
+    def get_closest_other(self):
+        c       = self.db.cursor()
+        diff    = np.inf
+        c.execute('SELECT * FROM baseflow WHERE dt=? AND N=? AND mesh=?',
+                  (self.dt, self.N, self.mesh))
+        matches     = c.fetchall()
+        if not matches:
+            return []
+        dist        = []
+        for i,m in enumerate(matches):
+            dist.append(np.abs(self.Re - m[0]))
+        imin = np.argmin(dist)
+        return db_data_to_object(matches[imin])
+
+    def baseflow_has_converged(self):
+        conv_flag =  np.loadtxt(BASEFLOW_CONV)
+        return conv_flag == 1
 
     def get_baseflow_data(self):
         data    = []
         c       = self.db.cursor()
         c.execute('SELECT data FROM baseflow WHERE Re=? AND dt=? AND N=? AND mesh=?',
                   (self.Re, self.dt, self.N, self.mesh))
-        if c.fetchone():
-            data = c.fetchone()
+        data = c.fetchone()
+        if data:
+            data = data[0]
         return data
 
-    def store_baseflow_data(self, data):
+    def store_baseflow_data(self, data_str):
         c = self.db.cursor()
         c.execute('INSERT INTO baseflow VALUES (?,?,?,?,?)',
-                  (self.Re, self.dt, self.N, self.mesh, data))
+                  (self.Re, self.dt, self.N, self.mesh, data_str))
         self.db.commit()
 
     def get_placeholders(self):
         ph = {'MESH':self.mesh_file,
               'BASEFLOW_CONV': BASEFLOW_CONV,
-              'BASEFLOW_DATA': BASEFLOW_DATA}
+              'BASEFLOW_DATA': BASEFLOW_DATA,
+              'BASEFLOW_OTHER_DATA':BASEFLOW_OTHER_DATA}
         return ph
 
-    def make_baseflow_edp_file(self):
+    def make_baseflow_edp_file(self, is_restart = False):
         # Read associated EDP template
         baseflow_temp   = sim.read_template(TEMPLATE_BASEFLOW)
         #
         content = '// Configuration parameters declaration, case \'%s\'\n' %(self.name)
-        content = content + sim.assign_freefem_var('Re', self.Re)
+        content = content + sim.assign_freefem_var('Re', self.Re) + '\n'
+        content = content + sim.assign_freefem_var('isRestart', is_restart)
         content = content + '\n// End of parameters declaration \n' + baseflow_temp
         content = sim.replace_placeholders(self.get_placeholders(), content)
         #
         sim.write_file(BASEFLOW_EDP, content)
         return content
+
+    def print_msg(self, msg):
+        print('[FLOCON]'+self.reduced_id + ' '+ msg)
     # --------------------------------------------------------------------------
     # PLOTING
     # --------------------------------------------------------------------------
@@ -260,3 +343,11 @@ class GaussianNoiseIO(GaussianIO):
     def __init__(self, x, y, sigma_x,  sigma_time, sigma_y = []):
         super().__init__(x, y, sigma_x, sigma_y)
         self.sigma_time = sigma_time
+
+def db_data_to_object(data):
+    s = Step()
+    s.Re    = data[0]
+    s.dt    = data[1]
+    s.N     = data[2]
+    s.mesh  = data[3]
+    return s

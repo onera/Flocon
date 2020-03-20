@@ -2,7 +2,8 @@ import sqlite3
 from sqlite3 import Error
 import io
 import numpy as np
-import os
+import subprocess
+import os 
 
 def adapt_array(arr):
     return arr.tobytes()
@@ -10,8 +11,8 @@ def adapt_array(arr):
 def convert_array(text):
     return np.frombuffer(text)
 
-sqlite3.register_adapter(np.ndarray, adapt_array)
-sqlite3.register_converter("array", convert_array)
+# sqlite3.register_adapter(np.ndarray, adapt_array)
+# sqlite3.register_converter("array", convert_array)
 
 class Simulator:
     def __init__(self):
@@ -64,6 +65,9 @@ def write_file(target, content):
     f.close()
 
 def read_template(target):
+    return file_to_str(target)
+
+def file_to_str(target):
     f       = open(target, 'r')
     str     = f.read()
     f.close()
@@ -72,7 +76,7 @@ def read_template(target):
 # EDP interface
 # ------------------------------------------------------------------------------
 def launch_edp_file(target):
-    os.system('FreeFem++ -nw {} > log'.format(target))
+    subprocess.run('FreeFem++ -nw {} > log'.format(target),shell=True)
 
 def freefem_data_file_to_np(file):
     return np.loadtxt(file,skiprows=1)
