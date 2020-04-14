@@ -23,13 +23,17 @@ BASEFLOW_EDP        = os.path.join(WORKING_DIR,'baseflow.edp')
 BASEFLOW_CONV       = os.path.join(WORKING_DIR, 'baseflow_conv')
 BASEFLOW_DATA       = os.path.join(WORKING_DIR, 'baseflow_data')
 BASEFLOW_OTHER_DATA = os.path.join(WORKING_DIR, 'baseflow_other_data')
-
+SIMOUT              = os.path.join(WORKING_DIR, 'simout')
 # Geometry of the step
 ymax            =  1.0
 ymin            = -1.0
 xmax            =  12.0
 xmin            = -2.0
 
+
+# TODO :
+#  - check for longer experiment or comensurable ones for baseflow data
+#
 class Step(TimeDomainSimulator):
     def __init__(self):
         self.DATABASE_FILE = os.path.join(CLASS_DIR,'STEP.db')
@@ -37,6 +41,8 @@ class Step(TimeDomainSimulator):
         self.main_init()
         # Initialise database tables
         self.create_table('baseflow',['Re real', 'dt real', 'N real', 'mesh text', 'data text'])
+        self.create_table('openloop',['config text', 'ioconfig text', \
+                                      'signame text', 'inputs text', 'outputs text'])
         # Create working temp directory if it does not exists
         if not os.path.exists(WORKING_DIR):
             os.mkdir(WORKING_DIR)
@@ -50,17 +56,17 @@ class Step(TimeDomainSimulator):
         act             = GaussianIO(-0.05, 0.01, 0.01, 0.1)
         self.add_to_list(self.actuators, act)
         # Noise input(s)
-        self.noise      = []
+        self.noises     = []
         noi             = GaussianNoiseIO(-0.5, 0.25, 0.1, 0.01)
-        self.add_to_list(self.noise, noi)
+        self.add_to_list(self.noises, noi)
         # Measured output(s)
         self.sensors    = []
         up_sens         = BorderIntegralIO([-0.35, -0.25], 'bottom')
         self.add_to_list(self.sensors, up_sens)
         # Performance output(s)
-        self.perf       = []
+        self.performances = []
         down_sens       = BorderIntegralIO([10.3, 10.7],'bottom')
-        self.add_to_list(self.perf, down_sens)
+        self.add_to_list(self.performances , down_sens)
         # Simulation parameter
         self.mesh       = 'test'   # mesh to be used
         self.N          = 250000     # number of iterations
@@ -91,10 +97,41 @@ class Step(TimeDomainSimulator):
         elif self.mesh=='test':
             return TEST_MESH
 
-
     @property
     def reduced_id(self):
-        return '[%.1f,%d,%.3f,%s]'%(self.Re, self.N, self.dt, self.mesh)
+        return '%.1f,%d,%.3f,%s'%(self.Re, self.N, self.dt, self.mesh)
+
+    @property
+    def nu(self):
+        return len(self.actuators)
+    @property
+    def nw(self):
+        return len(self.noises)
+    @property
+    def ny(self):
+        return len(self.sensors)
+    @property
+    def nz(self):
+        return len(self.performances)
+
+    @property
+    def ioconfig_str(self):
+        out = ' U:'
+        for a in self.actuators:
+            out = out + a.str_id
+        out = out + ' W:'
+        for n in self.noises:
+            out = out + n.str_id
+        out = out + ' Y:'
+        for s in self.sensors:
+            out = out + s.str_id
+        out = out + ' Z:'
+        for p in self.performances :
+            out = out + p.str_id
+        return out
+
+    def print_msg(self, msg):
+        print('[FLOCON]['+self.reduced_id + '] '+ msg)
     # --------------------------------------------------------------------------
     # BASE FLOW
     # --------------------------------------------------------------------------
@@ -159,6 +196,8 @@ class Step(TimeDomainSimulator):
             os.system('rm '+ BASEFLOW_CONV)
         if os.path.exists(BASEFLOW_DATA):
             os.system('rm '+ BASEFLOW_DATA)
+        if os.path.exists(SIMOUT)
+            os.system('rm '+ SIMOUT)
 
     def get_closest_other(self):
         c       = self.db.cursor()
@@ -213,9 +252,69 @@ class Step(TimeDomainSimulator):
         #
         sim.write_file(BASEFLOW_EDP, content)
         return content
+    # --------------------------------------------------------------------------
+    # OPEN LOOP
+    # --------------------------------------------------------------------------
+    def simulate_openloop(self, name, signals, force=False):
+        # Check whether this simulation already exists based on its name
+        data = selt.get_openloop_simulation(name)
+        if not force and data:
+            self.print_msg('Open-loop simulation named %s already found, returning.' %(name))
+            return data
+        # Try to get baseflow data
+        bf_data = self.get_baseflow_data()
+        if not bf_data:
+            self.print_msg('No existing baseflow for this configuration...Compute it first.')
+            return
+        # Check dimensions of input signal
+        err_msg = self.check_input_signals(signals)
+        if err_msg:
+            self.print_msg(err_msg)
+            return
+        # At this point, the simulation can be launched
+        # Store baseflow data in associated file
+        sim.write_file(BASEFLOW_OTHER_DATA, bf_data)
+        # Assemble EDP file for open-loop simulation
+        self.make_openloop_edp_file()
 
-    def print_msg(self, msg):
-        print('[FLOCON]'+self.reduced_id + ' '+ msg)
+    def make_openloop_edp_file(self):
+        # Read associated EDP template
+        openloop_temp   = sim.read_template(TEMPLATE_OPENLOOP)
+        #
+        content = '// Configuration parameters declaration, case \'%s\'\n' %(self.name)
+        content = content + sim.assign_freefem_var('Re', self.Re) + '\n'
+        content = content + '\n// End of parameters declaration \n' + openloop_temp
+        content = sim.replace_placeholders(self.get_placeholders(), content)
+        #
+        sim.write_file(OPENLOOP_EDP, content)
+        return content
+
+    def get_openloop_simulation(self, name):
+        data    = []
+        c       = self.db.cursor()
+        c.execute('SELECT inputs AND outputs FROM openloop WHERE config=? AND ioconfig=? AND signame=?',
+                  (self.reduced_id, self.ioconfig_str, name))
+        data = c.fetchone()
+        if data:
+            data = data[0]
+        return data
+
+    def check_input_signals(self, signals):
+        # Number of input signals
+        n = size(signals,2)
+        if n>self.nu:
+            return 'Too many input signals...%d signals,  excepted %d'%(n, self.nu)
+        elif n<self.nu:
+            return 'Not enough input signals...%d signals,  excepted %d'%(n, self.nu)
+        # signal length
+        nt = size(signals,1)
+        if nt>self.N:
+            return 'Signal has too many elements...%d, expected %d'%(nt, self.N)
+        elif nt < self.N:
+            return 'Signal has not enough elements...%d, expected %d'%(nt, self.N)
+        # Otherwise, signal has the right dimensions
+        return ''
+
     # --------------------------------------------------------------------------
     # PLOTING
     # --------------------------------------------------------------------------
@@ -240,7 +339,7 @@ class Step(TimeDomainSimulator):
         # The noise(s)
         n_x = xmin -1
         n_y = ymax + 1
-        plot_io(plt, ax, 'left', self.noise, 'w', n_x, n_y, 0.5, 'red')
+        plot_io(plt, ax, 'left', self.noises, 'w', n_x, n_y, 0.5, 'red')
         # The actuator(s)
         u_x = xmin - 1
         u_y = ymin - 1
@@ -248,7 +347,7 @@ class Step(TimeDomainSimulator):
         # The performane(s)
         p_x = xmax + 1
         p_y = ymax + 1
-        plot_io(plt, ax, 'right', self.perf, 'z', p_x, p_y, 0.5, 'orange')
+        plot_io(plt, ax, 'right', self.performances , 'z', p_x, p_y, 0.5, 'orange')
         # The sensor(s)
         s_x = xmax + 1
         s_y = ymin - 1
@@ -298,15 +397,14 @@ class BorderIntegralIO(SystemIO):
     def __init__(self, x, side):
         super().__init__(x, [])
         self.side = side
-
     def outside(self, xmin, xmax, ymin, ymax):
         if self.x[0] < xmin or self.x[1] > xmax:
             return True
         return False
+
     @property
     def xp(self):
         return np.mean(self.x)
-
     @property
     def yp(self):
         if self.side=='top':
@@ -316,9 +414,11 @@ class BorderIntegralIO(SystemIO):
                 return 0
             else:
                 return ymin
-
     def plot(self, plt, ax, color):
         plt.plot(self.x, self.yp*np.ones(2), color=color, linewidth=3)
+    @property
+    def str_id(self):
+        return 'BI,%f,%f,%s'%(self.x[0],self.x[1],self.side)
 
 # Gaussian action
 class GaussianIO(SystemIO):
@@ -329,7 +429,6 @@ class GaussianIO(SystemIO):
             self.sigma_y = sigma_y
         else:
             self.sigma_y = sigma_x
-
     def plot(self, plt, ax, color):
         sigs    = [1, 2, 3]
         al      = 1
@@ -337,15 +436,23 @@ class GaussianIO(SystemIO):
             ell = Ellipse((self.x, self.y), s*self.sigma_x, s*self.sigma_y, color=color,zorder=0)
             ax.add_artist(ell)
             ell.set_alpha(al)
-            al = al/2
+            al  = al/2
+    @property
+    def str_id(self):
+        return 'G,%f,%f,%f,%f'%(self.x, self.y, self.sigma_x, self.sigma_y)
 
 class GaussianNoiseIO(GaussianIO):
     def __init__(self, x, y, sigma_x,  sigma_time, sigma_y = []):
         super().__init__(x, y, sigma_x, sigma_y)
         self.sigma_time = sigma_time
+    @property
+    def str_id(self):
+        str = super().str_id
+        str = str.replace('G','GN')
+        return str +',%f'%(self.sigma_time)
 
 def db_data_to_object(data):
-    s = Step()
+    s       = Step()
     s.Re    = data[0]
     s.dt    = data[1]
     s.N     = data[2]
