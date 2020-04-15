@@ -3,7 +3,7 @@ from sqlite3 import Error
 import io
 import numpy as np
 import subprocess
-import os 
+import os
 
 def adapt_array(arr):
     return arr.tobytes()
@@ -11,8 +11,8 @@ def adapt_array(arr):
 def convert_array(text):
     return np.frombuffer(text)
 
-# sqlite3.register_adapter(np.ndarray, adapt_array)
-# sqlite3.register_converter("array", convert_array)
+sqlite3.register_adapter(np.ndarray, adapt_array)
+sqlite3.register_converter("array", convert_array)
 
 class Simulator:
     def __init__(self):
@@ -21,7 +21,7 @@ class Simulator:
 
     def init_database(self):
         try:
-            self.db = sqlite3.connect(self.DATABASE_FILE)
+            self.db = sqlite3.connect(self.DATABASE_FILE,detect_types=sqlite3.PARSE_DECLTYPES)
         except Error as e:
             print(e)
 
@@ -77,6 +77,9 @@ def file_to_str(target):
 # ------------------------------------------------------------------------------
 def launch_edp_file(target):
     subprocess.run('FreeFem++ -nw {} > log'.format(target),shell=True)
+
+def np_to_freefem_file(target, m):
+    np.savetxt(target,m, delimiter=' ', fmt='%.16f', header='%d %d'%(m.shape[0], m.shape[1]),comments='')
 
 def freefem_data_file_to_np(file):
     return np.loadtxt(file,skiprows=1)

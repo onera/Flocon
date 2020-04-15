@@ -24,6 +24,7 @@ BASEFLOW_CONV       = os.path.join(WORKING_DIR, 'baseflow_conv')
 BASEFLOW_DATA       = os.path.join(WORKING_DIR, 'baseflow_data')
 BASEFLOW_OTHER_DATA = os.path.join(WORKING_DIR, 'baseflow_other_data')
 SIMOUT              = os.path.join(WORKING_DIR, 'simout')
+SIMIN               = os.path.join(WORKING_DIR, 'simin')
 # Geometry of the step
 ymax            =  1.0
 ymin            = -1.0
@@ -42,7 +43,7 @@ class Step(TimeDomainSimulator):
         # Initialise database tables
         self.create_table('baseflow',['Re real', 'dt real', 'N real', 'mesh text', 'data text'])
         self.create_table('openloop',['config text', 'ioconfig text', \
-                                      'signame text', 'inputs text', 'outputs text'])
+                                      'casename text', 'inputs array', 'outputs array'])
         # Create working temp directory if it does not exists
         if not os.path.exists(WORKING_DIR):
             os.mkdir(WORKING_DIR)
@@ -99,7 +100,7 @@ class Step(TimeDomainSimulator):
 
     @property
     def reduced_id(self):
-        return '%.1f,%d,%.3f,%s'%(self.Re, self.N, self.dt, self.mesh)
+        return '%.1f,%d,%.3f,%s,%r'%(self.Re, self.N, self.dt, self.mesh, self.NL)
 
     @property
     def nu(self):
@@ -196,7 +197,7 @@ class Step(TimeDomainSimulator):
             os.system('rm '+ BASEFLOW_CONV)
         if os.path.exists(BASEFLOW_DATA):
             os.system('rm '+ BASEFLOW_DATA)
-        if os.path.exists(SIMOUT)
+        if os.path.exists(SIMOUT):
             os.system('rm '+ SIMOUT)
 
     def get_closest_other(self):
@@ -237,7 +238,9 @@ class Step(TimeDomainSimulator):
         ph = {'MESH':self.mesh_file,
               'BASEFLOW_CONV': BASEFLOW_CONV,
               'BASEFLOW_DATA': BASEFLOW_DATA,
-              'BASEFLOW_OTHER_DATA':BASEFLOW_OTHER_DATA}
+              'BASEFLOW_OTHER_DATA':BASEFLOW_OTHER_DATA,
+              'SIMOUT':SIMOUT,
+              'SIMIN':SIMIN}
         return ph
 
     def make_baseflow_edp_file(self, is_restart = False):
@@ -271,6 +274,8 @@ class Step(TimeDomainSimulator):
         if err_msg:
             self.print_msg(err_msg)
             return
+        # Store the input signal into the file SIMIN
+        sim.np_to_freefem_file(SIMIN, signals)
         # At this point, the simulation can be launched
         # Store baseflow data in associated file
         sim.write_file(BASEFLOW_OTHER_DATA, bf_data)
@@ -281,8 +286,10 @@ class Step(TimeDomainSimulator):
         # Read associated EDP template
         openloop_temp   = sim.read_template(TEMPLATE_OPENLOOP)
         #
-        content = '// Configuration parameters declaration, case \'%s\'\n' %(self.name)
+        content = '// Configuration parameters declaration, case\n'
         content = content + sim.assign_freefem_var('Re', self.Re) + '\n'
+        content = content + sim.assign_freefem_var('NL', self.NL) + '\n'
+
         content = content + '\n// End of parameters declaration \n' + openloop_temp
         content = sim.replace_placeholders(self.get_placeholders(), content)
         #
@@ -292,7 +299,7 @@ class Step(TimeDomainSimulator):
     def get_openloop_simulation(self, name):
         data    = []
         c       = self.db.cursor()
-        c.execute('SELECT inputs AND outputs FROM openloop WHERE config=? AND ioconfig=? AND signame=?',
+        c.execute('SELECT inputs AND outputs FROM openloop WHERE config=? AND ioconfig=? AND casename=?',
                   (self.reduced_id, self.ioconfig_str, name))
         data = c.fetchone()
         if data:
@@ -401,7 +408,6 @@ class BorderIntegralIO(SystemIO):
         if self.x[0] < xmin or self.x[1] > xmax:
             return True
         return False
-
     @property
     def xp(self):
         return np.mean(self.x)
@@ -416,9 +422,21 @@ class BorderIntegralIO(SystemIO):
                 return ymin
     def plot(self, plt, ax, color):
         plt.plot(self.x, self.yp*np.ones(2), color=color, linewidth=3)
+
     @property
     def str_id(self):
         return 'BI,%f,%f,%s'%(self.x[0],self.x[1],self.side)
+
+    def to_fem(self, cat, id):
+        if self.side=='top':
+            side = '(y>=0.1)'
+        else:
+            side = '(y<=0.1)'
+        output_id   = '%sBI%d'%(cat,id)
+        decl        = 'Up support_%s=(x>=%.2f)*(x<=%2f)*%s'%(output_id, self.x[0], self.x[1], side)
+        init        = 'real %s = int1d(th,2)(dy(u)*support_%s)'%(output_id, output_id)
+        assign      = '%s = int1d(th,2)(dy(u)*support_%s)'%(output_id, output_id)
+        return [output_id, decl, init, assign]
 
 # Gaussian action
 class GaussianIO(SystemIO):
@@ -440,6 +458,43 @@ class GaussianIO(SystemIO):
     @property
     def str_id(self):
         return 'G,%f,%f,%f,%f'%(self.x, self.y, self.sigma_x, self.sigma_y)
+
+    def to_fem(self, cat, id):
+        # ID
+        input_id    = '%sG%d'%(cat,id)
+        # Declarations
+        # Actuator
+        x_decl      = sim.assign_freefem_var('x_%s'%(input_id), self.x)
+        sx_decl     = sim.assign_freefem_var('sx_%s'%(input_id), self.sigma_x)
+        y_decl      = sim.assign_freefem_var('y_%s'%(input_id), self.y)
+        sy_decl     = sim.assign_freefem_var('sy_%s'%(input_id), self.sigma_y)
+        decl        = '\n'.join([x_decl + sx_decl +y_decl + sy_decl +\
+                       'Uvvp [%s_1, %s_2, %s_3];'%(input_id,input_id,input_id),\
+                       '{',\
+                       'func real in_act_%s(real x, real y)'%(input_id),\
+                       'return exp(-(x-x_%s).^2/(2*(sx_%s).^2))*exp(-(y-y_%s).^2/(2*(sy_%s).^2));'%(input_id, input_id, input_id, input_id),\
+                       '};',\
+                       '[rhs_%s_1, rhs_%s_2, rhs_%s_3]  = [0,in_act_%s(x,y),0]'%(input_id,input_id,input_id,input_id),\
+                       '%s_1[]             = MatMass * rhs_%s_1[]'%(input_id,input_id),\
+                       '};'])
+        # Init: input signal read
+        init = ''
+        # init = '\n'.join(['// Reading input signal %s from input matrix'%(input_id),\
+        #                    'real[int] cmd_%s(N);'%(input_id),\
+        #                    'cmd_%s=0.;'%(input_id),\
+        #                    '{',\
+        #                    'int in_size;',\
+        #                    'ifstream file("@SIMIN");',\
+        #                    'file >> in_size;',\
+        #                    'for (int i=0; i< in_size; i++)',\
+        #                    '{',\
+        #                    'file >> cmd_%s(i)'%(input_id),\
+        #                    '};',\
+        #                    '};'])
+        # Associated
+        assign = 'rhs1[] += input_signals[i,%d]*%s_1[]; // input %s' %(id, input_id, input_id)
+        return [input_id, decl, init, assign]
+
 
 class GaussianNoiseIO(GaussianIO):
     def __init__(self, x, y, sigma_x,  sigma_time, sigma_y = []):
