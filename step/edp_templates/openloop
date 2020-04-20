@@ -65,6 +65,8 @@ varf rhs([u1,v1,p1],[u2,v2,p2])
 // AUTOMATED INITIALISATION
 @INITIALISATION
 
+// OUTPUTS AT T=0
+@OUTPUTS
 
 // INTEGRATION LOOP ............................................................
 for (int i=0; i<N; i++)

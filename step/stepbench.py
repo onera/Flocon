@@ -19,11 +19,11 @@ FINE_MESH       = os.path.join(MESH_DIR, 'fine.msh')
 TEMPLATE_DIR        = os.path.join(CLASS_DIR, 'edp_templates')
 TEMPLATE_BASEFLOW   = os.path.join(TEMPLATE_DIR, 'baseflow')
 TEMPLATE_OPENLOOP   = os.path.join(TEMPLATE_DIR, 'openloop')
-BASEFLOW_EDP        = os.path.join(WORKING_DIR,'baseflow.edp')
+BASEFLOW_EDP        = os.path.join(WORKING_DIR, 'baseflow.edp')
 BASEFLOW_CONV       = os.path.join(WORKING_DIR, 'baseflow_conv')
 BASEFLOW_DATA       = os.path.join(WORKING_DIR, 'baseflow_data')
 BASEFLOW_OTHER_DATA = os.path.join(WORKING_DIR, 'baseflow_other_data')
-OPENLOOP_EDP        = os.path.join(WORKING_DIR,'openloop.edp')
+OPENLOOP_EDP        = os.path.join(WORKING_DIR, 'openloop.edp')
 SIMOUT              = os.path.join(WORKING_DIR, 'simout')
 SIMIN               = os.path.join(WORKING_DIR, 'simin')
 # Geometry of the step
@@ -35,14 +35,16 @@ xmin            = -2.0
 
 # TODO :
 #  - check for longer experiment or comensurable ones for baseflow data
-#
+#  - N and dt not required for baseflow
 class Step(TimeDomainSimulator):
     def __init__(self):
         self.DATABASE_FILE = os.path.join(CLASS_DIR,'STEP.db')
         # Initialise database and default parameters for the benchmark
         self.main_init()
         # Initialise database tables
-        self.create_table('baseflow',['Re real', 'dt real', 'N real', 'mesh text', 'data text'])
+        # self.create_table('baseflow',['Re real', 'dt real', 'N real', 'mesh text', 'data text'])
+        self.create_table('baseflow',['Re real', 'mesh text', 'data text'])
+
         self.create_table('openloop',['config text', 'ioconfig text', \
                                       'casename text', 'inputs array', 'outputs array'])
         # Create working temp directory if it does not exists
@@ -128,7 +130,7 @@ class Step(TimeDomainSimulator):
         for s in self.sensors:
             out = out + s.str_id
         out = out + ' Z:'
-        for p in self.performances :
+        for p in self.performances:
             out = out + p.str_id
         return out
 
@@ -204,8 +206,7 @@ class Step(TimeDomainSimulator):
     def get_closest_other(self):
         c       = self.db.cursor()
         diff    = np.inf
-        c.execute('SELECT * FROM baseflow WHERE dt=? AND N=? AND mesh=?',
-                  (self.dt, self.N, self.mesh))
+        c.execute('SELECT * FROM baseflow WHERE mesh=?', (self.mesh,))
         matches     = c.fetchall()
         if not matches:
             return []
@@ -222,8 +223,8 @@ class Step(TimeDomainSimulator):
     def get_baseflow_data(self):
         data    = []
         c       = self.db.cursor()
-        c.execute('SELECT data FROM baseflow WHERE Re=? AND dt=? AND N=? AND mesh=?',
-                  (self.Re, self.dt, self.N, self.mesh))
+        c.execute('SELECT data FROM baseflow WHERE Re=? AND mesh=?',
+                  (self.Re, self.mesh))
         data = c.fetchone()
         if data:
             data = data[0]
@@ -231,8 +232,8 @@ class Step(TimeDomainSimulator):
 
     def store_baseflow_data(self, data_str):
         c = self.db.cursor()
-        c.execute('INSERT INTO baseflow VALUES (?,?,?,?,?)',
-                  (self.Re, self.dt, self.N, self.mesh, data_str))
+        c.execute('INSERT INTO baseflow VALUES (?,?,?)',
+                  (self.Re,  self.mesh, data_str))
         self.db.commit()
 
     def get_placeholders(self):
@@ -277,10 +278,10 @@ class Step(TimeDomainSimulator):
             return
         self.clean_temp_files()
         # Completing the input signal with the noise
-        w       = self.get_noise_signals(seed=seed)
-        signals = np.hstack([w,signals])
+        w               = self.get_noise_signals(seed=seed)
+        input_signals   = np.hstack([w,signals])
         # Store the input signal into the file SIMIN
-        sim.np_to_freefem_file(SIMIN, signals)
+        sim.np_to_freefem_file(SIMIN, input_signals)
         # At this point, the simulation can be launched
         # Store baseflow data in associated file
         sim.write_file(BASEFLOW_DATA, bf_data)
@@ -322,12 +323,21 @@ class Step(TimeDomainSimulator):
     def get_openloop_simulation(self, name):
         data    = []
         c       = self.db.cursor()
-        c.execute('SELECT inputs AND outputs FROM openloop WHERE config=? AND ioconfig=? AND casename=?',
+        c.execute('SELECT inputs FROM openloop WHERE config=? AND ioconfig=? AND casename=?',
                   (self.reduced_id, self.ioconfig_str, name))
-        data = c.fetchone()
-        if data:
-            data = data[0]
-        return data
+        tmp = c.fetchone()
+        data = {'in':[],'out':[]}
+        if tmp:
+            data['in'] = np.reshape(tmp,[self.N, self.nw + self.nu],order='F')
+        c.execute('SELECT outputs FROM openloop WHERE config=? AND ioconfig=? AND casename=?',
+                  (self.reduced_id, self.ioconfig_str, name))
+        tmp = c.fetchone()
+        if tmp:
+            data['out'] = np.reshape(tmp,[self.N, 1 + self.nz + self.ny],order='F')
+        if not data['in'] and not data['out']:
+            return []
+        else:
+            return data
 
     def get_io_placeholders(self):
         ph = {'DECLARATIONS':'','INITIALISATION':'','INPUTS':'','OUTPUTS':''}
