@@ -10,12 +10,11 @@ fespace Uvvp(th,[P2,P2,P1]);
 // Base Flow
 Uvvp [ub1,ub2,pb];
 {
-  ifstream file("@BASE_FLOW_DATA");	// load base-flow
+  ifstream file("@BASEFLOW_DATA");	// load base-flow
   file >> ub1[];
 };
-string filename="@SIMOUT";
 {
-  ofstream file(filename);
+  ofstream file("@SIMOUT");
 };
 //
 Uvvp [u,v,p];			        // current flowfield
@@ -33,7 +32,7 @@ matrix MatMass = Mass(Uvvp, Uvvp, solver=CG);
 
 
 // INITIALISATION ..............................................................
-real time  = 0; // current time
+real simtime  = 0; // current time
 u[]       = 0; // current flowfield
 // coefficients for first-order in time integration
 real a0   = 1./dt;
@@ -87,18 +86,18 @@ for (int i=0; i<N; i++)
     bet0  = 2;
     bet1  = -1;
 		A     = LNS(Uvvp,Uvvp,solver=sparsesolver);
-	}
+	};
 	// Build right-hand-side
 	rhs1[] = -a1*up[] - a2*upp[];
 	if(NL == true)	// if NL, account non-linear terms
   {
 		rhs1[] += bet0*nlpu[] + bet1*nlppu[];
-  }
+  };
   // INPUTS ....................................................................
   @INPUTS
   //
 	u[]    = A^-1*rhs1[];  // Flowfield update
-	time+   = dt;           // Time update
+	simtime += dt;           // Time update
 	rhs1[] = MatMass*u[];
 	//real nrj=u[]'*rhs1[];	// compute perturbation energy
   // OUTPUTS ...................................................................

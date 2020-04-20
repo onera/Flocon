@@ -259,9 +259,9 @@ class Step(TimeDomainSimulator):
     # --------------------------------------------------------------------------
     # OPEN LOOP
     # --------------------------------------------------------------------------
-    def simulate_openloop(self, name, signals, force=False):
+    def simulate_openloop(self, name, signals, force=False, seed = []):
         # Check whether this simulation already exists based on its name
-        data = selt.get_openloop_simulation(name)
+        data = self.get_openloop_simulation(name)
         if not force and data:
             self.print_msg('Open-loop simulation named %s already found, returning.' %(name))
             return data
@@ -275,21 +275,39 @@ class Step(TimeDomainSimulator):
         if err_msg:
             self.print_msg(err_msg)
             return
+        self.clean_temp_files()
+        # Completing the input signal with the noise
+        w       = self.get_noise_signals(seed=seed)
+        signals = np.hstack([w,signals])
         # Store the input signal into the file SIMIN
         sim.np_to_freefem_file(SIMIN, signals)
         # At this point, the simulation can be launched
         # Store baseflow data in associated file
-        sim.write_file(BASEFLOW_OTHER_DATA, bf_data)
+        sim.write_file(BASEFLOW_DATA, bf_data)
         # Assemble EDP file for open-loop simulation
         self.make_openloop_edp_file()
+        # Launching Simulation
+        sim.launch_edp_file(OPENLOOP_EDP)
+        # Simulation is done, reading and storing
+        output_signals = sim.freefem_data_file_to_np(SIMOUT)
+        self.store_openloop_data(name, input_signals, output_signals)
+        return output_signals
+
+    def store_openloop_data(self, name, input_signals, output_signals):
+        c = self.db.cursor()
+        c.execute('INSERT INTO openloop VALUES (?,?,?,?,?)',
+                  (self.reduced_id, self.ioconfig_str, name, input_signals, output_signals))
+        self.db.commit()
 
     def make_openloop_edp_file(self):
         # Read associated EDP template
         openloop_temp   = sim.read_template(TEMPLATE_OPENLOOP)
         #
         content     = '// Configuration parameters declaration, case\n'
-        content     = content + sim.assign_freefem_var('Re', self.Re) + '\n'
-        content     = content + sim.assign_freefem_var('NL', self.NL) + '\n'
+        content     = content + sim.assign_freefem_var('Re', self.Re)
+        content     = content + sim.assign_freefem_var('dt', self.dt)
+        content     = content + sim.assign_freefem_var('N', self.N)
+        content     = content + sim.assign_freefem_var('NL', self.NL)
 
         content     = content + '\n// End of parameters declaration \n' + openloop_temp
         # Adding io
@@ -315,16 +333,16 @@ class Step(TimeDomainSimulator):
         ph = {'DECLARATIONS':'','INITIALISATION':'','INPUTS':'','OUTPUTS':''}
         # Reading input signal
         input_signals = '\n'.join(['// Input signals matrix',\
-                                   'real[int,int] input_signals(%d, %d)'%(self.N, self.nw + self.ny),\
+                                   'real[int,int] inputSignals(%d, %d);'%(self.N, self.nw + self.ny),\
                                    '{',\
                                    'ifstream file("%s");'%(SIMIN),\
-                                   'file >> input_signals;',\
+                                   'file >> inputSignals;',\
                                    '};',''])
         ph['DECLARATIONS'] = ph['DECLARATIONS'] + input_signals
-        D = []
-        I = []
-        IA = []
-        OA = []
+        D   = []
+        I   = []
+        IA  = []
+        OA  = []
         # Inputs
         nu = 0
         [D, I, IA, nu, tmp] = iolist_to_fem(self.noises, D, I, IA, 'w',nu)
@@ -339,8 +357,8 @@ class Step(TimeDomainSimulator):
         save_outputs = '\n'.join(['{',\
                                  'ofstream f("@SIMOUT",append);',\
                                  'f.precision(16);',\
-                                 'f << time<<%s<<'%(SEP),\
-                                 ('%s<<'%(SEP)).join(o_names),\
+                                 'f << simtime<<%s<<'%(SEP),\
+                                 ('<<%s<<'%(SEP)).join(o_names),\
                                  '<< endl;',\
                                  '};'])
         OA.append(save_outputs)
@@ -353,13 +371,13 @@ class Step(TimeDomainSimulator):
 
     def check_input_signals(self, signals):
         # Number of input signals
-        n = size(signals,2)
+        n = signals.shape[1]
         if n>self.nu:
             return 'Too many input signals...%d signals,  excepted %d'%(n, self.nu)
         elif n<self.nu:
             return 'Not enough input signals...%d signals,  excepted %d'%(n, self.nu)
         # signal length
-        nt = size(signals,1)
+        nt = signals.shape[0]
         if nt>self.N:
             return 'Signal has too many elements...%d, expected %d'%(nt, self.N)
         elif nt < self.N:
@@ -367,6 +385,11 @@ class Step(TimeDomainSimulator):
         # Otherwise, signal has the right dimensions
         return ''
 
+    def get_noise_signals(self, seed = []):
+        s = np.zeros([self.N, self.nw])
+        for i,w in enumerate(self.noises):
+            s[:,i] = w.signal(self.N, seed=seed)
+        return s
     # --------------------------------------------------------------------------
     # PLOTING
     # --------------------------------------------------------------------------
@@ -479,9 +502,9 @@ class BorderIntegralIO(SystemIO):
             side = '(y<=0.1)'
         output_id   = '%s%dBI'%(cat,id)
         decl        = '\n'.join(['// OUTPUT %s'%(output_id),\
-                                'Up support_%s=(x>=%.2f)*(x<=%2f)*%s;'%(output_id, self.x[0], self.x[1], side)])
-        init        = 'real %s = int1d(th,2)(dy(u)*support_%s);'%(output_id, output_id)
-        assign      = '%s = int1d(th,2)(dy(u)*support_%s);'%(output_id, output_id)
+                                'Up support%s=(x>=%.2f)*(x<=%2f)*%s;'%(output_id, self.x[0], self.x[1], side)])
+        init        = 'real %s = int1d(th,2)(dy(u)*support%s);'%(output_id, output_id)
+        assign      = '%s = int1d(th,2)(dy(u)*support%s);'%(output_id, output_id)
         return [output_id, decl, init, assign]
 
 # Gaussian action
@@ -510,23 +533,24 @@ class GaussianIO(SystemIO):
         input_id    = '%s%dG'%(cat,id)
         # Declarations
         # Actuator
-        x_decl      = sim.assign_freefem_var('x_%s'%(input_id), self.x)
-        sx_decl     = sim.assign_freefem_var('sx_%s'%(input_id), self.sigma_x)
-        y_decl      = sim.assign_freefem_var('y_%s'%(input_id), self.y)
-        sy_decl     = sim.assign_freefem_var('sy_%s'%(input_id), self.sigma_y)
+        x_decl      = sim.assign_freefem_var('x%s'%(input_id), self.x)
+        sx_decl     = sim.assign_freefem_var('sx%s'%(input_id), self.sigma_x)
+        y_decl      = sim.assign_freefem_var('y%s'%(input_id), self.y)
+        sy_decl     = sim.assign_freefem_var('sy%s'%(input_id), self.sigma_y)
         decl        = '\n'.join(['// INPUT %s'%(input_id),x_decl + sx_decl +y_decl + sy_decl +\
-                       'Uvvp [%s_1, %s_2, %s_3];'%(input_id,input_id,input_id),\
+                       'Uvvp [%s1, %s2, %s3];'%(input_id,input_id,input_id),\
                        '{',\
-                       'func real in_act_%s(real x, real y)'%(input_id),\
-                       'return exp(-(x-x_%s).^2/(2*(sx_%s).^2))*exp(-(y-y_%s).^2/(2*(sy_%s).^2));'%(input_id, input_id, input_id, input_id),\
+                       'func real inact%s(real x, real y)'%(input_id),\
+                       '{',\
+                       'return exp(-(x-x%s)^2/(2*(sx%s)^2))*exp(-(y-y%s)^2/(2*(sy%s)^2));'%(input_id, input_id, input_id, input_id),\
                        '};',\
-                       '[rhs_%s_1, rhs_%s_2, rhs_%s_3]  = [0,in_act_%s(x,y),0]'%(input_id,input_id,input_id,input_id),\
-                       '%s_1[]             = MatMass * rhs_%s_1[]'%(input_id,input_id),\
+                       '[rhs1, rhs2, rhs3]  = [0,inact%s(x,y),0];'%(input_id),\
+                       '%s1[]             = MatMass * rhs1[];'%(input_id),\
                        '};'])
         # Init: input signal read
         init = ''
         # Associated
-        assign = 'rhs1[] += input_signals[i,%d]*%s_1[]; // input %s' %(id - 1, input_id, input_id)
+        assign = 'rhs1[] += inputSignals(i,%d)*%s1[]; // input %s' %(id - 1, input_id, input_id)
         return [input_id, decl, init, assign]
 
 
@@ -539,6 +563,13 @@ class GaussianNoiseIO(GaussianIO):
         str = super().str_id
         str = str.replace('G','GN')
         return str +',%f'%(self.sigma_time)
+    def signal(self, N, seed= []):
+        if seed is None:
+            rng = np.random.default_rng()
+        else:
+            rng = np.random.default_rng(seed=seed)
+        #
+        return np.array(rng.normal(scale = self.sigma_time, size = N))
 
 ## MISC FUN
 def db_data_to_object(data):
