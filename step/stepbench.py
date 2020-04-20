@@ -23,6 +23,7 @@ BASEFLOW_EDP        = os.path.join(WORKING_DIR,'baseflow.edp')
 BASEFLOW_CONV       = os.path.join(WORKING_DIR, 'baseflow_conv')
 BASEFLOW_DATA       = os.path.join(WORKING_DIR, 'baseflow_data')
 BASEFLOW_OTHER_DATA = os.path.join(WORKING_DIR, 'baseflow_other_data')
+OPENLOOP_EDP        = os.path.join(WORKING_DIR,'openloop.edp')
 SIMOUT              = os.path.join(WORKING_DIR, 'simout')
 SIMIN               = os.path.join(WORKING_DIR, 'simin')
 # Geometry of the step
@@ -286,12 +287,16 @@ class Step(TimeDomainSimulator):
         # Read associated EDP template
         openloop_temp   = sim.read_template(TEMPLATE_OPENLOOP)
         #
-        content = '// Configuration parameters declaration, case\n'
-        content = content + sim.assign_freefem_var('Re', self.Re) + '\n'
-        content = content + sim.assign_freefem_var('NL', self.NL) + '\n'
+        content     = '// Configuration parameters declaration, case\n'
+        content     = content + sim.assign_freefem_var('Re', self.Re) + '\n'
+        content     = content + sim.assign_freefem_var('NL', self.NL) + '\n'
 
-        content = content + '\n// End of parameters declaration \n' + openloop_temp
-        content = sim.replace_placeholders(self.get_placeholders(), content)
+        content     = content + '\n// End of parameters declaration \n' + openloop_temp
+        # Adding io
+        content = sim.replace_placeholders(self.get_io_placeholders(), content)
+
+        content     = sim.replace_placeholders(self.get_placeholders(), content)
+
         #
         sim.write_file(OPENLOOP_EDP, content)
         return content
@@ -305,6 +310,46 @@ class Step(TimeDomainSimulator):
         if data:
             data = data[0]
         return data
+
+    def get_io_placeholders(self):
+        ph = {'DECLARATIONS':'','INITIALISATION':'','INPUTS':'','OUTPUTS':''}
+        # Reading input signal
+        input_signals = '\n'.join(['// Input signals matrix',\
+                                   'real[int,int] input_signals(%d, %d)'%(self.N, self.nw + self.ny),\
+                                   '{',\
+                                   'ifstream file("%s");'%(SIMIN),\
+                                   'file >> input_signals;',\
+                                   '};',''])
+        ph['DECLARATIONS'] = ph['DECLARATIONS'] + input_signals
+        D = []
+        I = []
+        IA = []
+        OA = []
+        # Inputs
+        nu = 0
+        [D, I, IA, nu, tmp] = iolist_to_fem(self.noises, D, I, IA, 'w',nu)
+        [D, I, IA, nu, tmp] = iolist_to_fem(self.actuators, D, I, IA,'u', nu)
+        # Outputs
+        ny = 0
+        [D, I, OA, ny,z_names] = iolist_to_fem(self.performances, D, I, OA,'z', ny)
+        [D, I, OA, ny,y_names] = iolist_to_fem(self.sensors, D, I, OA,'y', ny)
+        # Saving outputs
+        o_names = z_names + y_names
+        SEP = '"   "'
+        save_outputs = '\n'.join(['{',\
+                                 'ofstream f("@SIMOUT",append);',\
+                                 'f.precision(16);',\
+                                 'f << time<<%s<<'%(SEP),\
+                                 ('%s<<'%(SEP)).join(o_names),\
+                                 '<< endl;',\
+                                 '};'])
+        OA.append(save_outputs)
+        #
+        ph['DECLARATIONS']      = ph['DECLARATIONS'] + '\n'.join(D)
+        ph['INITIALISATION']    = ph['INITIALISATION']+ '\n'.join(I)
+        ph['INPUTS']            = ph['INPUTS'] + '\n'.join(IA)
+        ph['OUTPUTS']           = ph['OUTPUTS'] + '\n'.join(OA)
+        return ph
 
     def check_input_signals(self, signals):
         # Number of input signals
@@ -432,10 +477,11 @@ class BorderIntegralIO(SystemIO):
             side = '(y>=0.1)'
         else:
             side = '(y<=0.1)'
-        output_id   = '%sBI%d'%(cat,id)
-        decl        = 'Up support_%s=(x>=%.2f)*(x<=%2f)*%s'%(output_id, self.x[0], self.x[1], side)
-        init        = 'real %s = int1d(th,2)(dy(u)*support_%s)'%(output_id, output_id)
-        assign      = '%s = int1d(th,2)(dy(u)*support_%s)'%(output_id, output_id)
+        output_id   = '%s%dBI'%(cat,id)
+        decl        = '\n'.join(['// OUTPUT %s'%(output_id),\
+                                'Up support_%s=(x>=%.2f)*(x<=%2f)*%s;'%(output_id, self.x[0], self.x[1], side)])
+        init        = 'real %s = int1d(th,2)(dy(u)*support_%s);'%(output_id, output_id)
+        assign      = '%s = int1d(th,2)(dy(u)*support_%s);'%(output_id, output_id)
         return [output_id, decl, init, assign]
 
 # Gaussian action
@@ -461,14 +507,14 @@ class GaussianIO(SystemIO):
 
     def to_fem(self, cat, id):
         # ID
-        input_id    = '%sG%d'%(cat,id)
+        input_id    = '%s%dG'%(cat,id)
         # Declarations
         # Actuator
         x_decl      = sim.assign_freefem_var('x_%s'%(input_id), self.x)
         sx_decl     = sim.assign_freefem_var('sx_%s'%(input_id), self.sigma_x)
         y_decl      = sim.assign_freefem_var('y_%s'%(input_id), self.y)
         sy_decl     = sim.assign_freefem_var('sy_%s'%(input_id), self.sigma_y)
-        decl        = '\n'.join([x_decl + sx_decl +y_decl + sy_decl +\
+        decl        = '\n'.join(['// INPUT %s'%(input_id),x_decl + sx_decl +y_decl + sy_decl +\
                        'Uvvp [%s_1, %s_2, %s_3];'%(input_id,input_id,input_id),\
                        '{',\
                        'func real in_act_%s(real x, real y)'%(input_id),\
@@ -479,20 +525,8 @@ class GaussianIO(SystemIO):
                        '};'])
         # Init: input signal read
         init = ''
-        # init = '\n'.join(['// Reading input signal %s from input matrix'%(input_id),\
-        #                    'real[int] cmd_%s(N);'%(input_id),\
-        #                    'cmd_%s=0.;'%(input_id),\
-        #                    '{',\
-        #                    'int in_size;',\
-        #                    'ifstream file("@SIMIN");',\
-        #                    'file >> in_size;',\
-        #                    'for (int i=0; i< in_size; i++)',\
-        #                    '{',\
-        #                    'file >> cmd_%s(i)'%(input_id),\
-        #                    '};',\
-        #                    '};'])
         # Associated
-        assign = 'rhs1[] += input_signals[i,%d]*%s_1[]; // input %s' %(id, input_id, input_id)
+        assign = 'rhs1[] += input_signals[i,%d]*%s_1[]; // input %s' %(id - 1, input_id, input_id)
         return [input_id, decl, init, assign]
 
 
@@ -506,6 +540,7 @@ class GaussianNoiseIO(GaussianIO):
         str = str.replace('G','GN')
         return str +',%f'%(self.sigma_time)
 
+## MISC FUN
 def db_data_to_object(data):
     s       = Step()
     s.Re    = data[0]
@@ -513,3 +548,17 @@ def db_data_to_object(data):
     s.N     = data[2]
     s.mesh  = data[3]
     return s
+
+def iolist_to_fem(li, D, I, A, cat, ctr):
+    names = []
+    for e in li:
+        ctr = ctr+1
+        [id, decl, init, assi]  = e.to_fem(cat, ctr)
+        if decl:
+            D.append(decl)
+        if init:
+            I.append(init)
+        if assi:
+            A.append(assi)
+        names.append(id)
+    return [D, I, A, ctr, names]
