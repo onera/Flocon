@@ -60,7 +60,10 @@ Once the base-flow has been computed, open-loop simulations can be performed. Th
 | `step.performances` | list of performances outputs                           |  as in [1]     |
 | `step.sensors`      | list of sensors                                        |  as in [1]     |
 
-Note that in addition to the physical configuration of the inputs and outputs (see the associated sections below), an open-loop simulation depends on the exact signal that is fed to the system. Therefore, in the database, open-loop simulations are identified by the parameters in the table above, the matrices containing the input and output signals and a name (to make it intelligible).
+*Remark: `N` can be modified indirectly by setting the final time `step.tf`. The time step remains untouched.*
+
+Note that in addition to the physical configuration of the inputs and outputs (see the associated sections below), an open-loop simulation depends on the exact signal that is fed to the system.
+An open-loop simulation is therefore stored in the database as the parameters in the table above, the matrices containing the input and output signals and a name (to make it intelligible). The latter is used as identifier to retrieve the data from the database.
 
 By default, perturbations are handled within Flocon so that the user need only to provide the control input. For instance, to simulate the open-loop with no command input (but with default noise):
 
