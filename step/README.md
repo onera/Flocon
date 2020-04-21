@@ -5,9 +5,9 @@
 
 * [Introduction](#introduction)
   * [Requirements](#requirements)
-* [Getting started](#gettingstarted)
+* [Getting started](#getting_started)
   * [Initialisation](#initialisation)
-  * [Base-flow](#baseflow)
+  * [Base-flow](#base-flow)
 
 
 ## Introduction
