@@ -8,13 +8,13 @@ from ..simulators import TimeDomainSimulator
 from ..simulators import simulators as sim
 
 
-CLASS_DIR       = os.path.dirname(__file__)
-WORKING_DIR     = os.path.join(CLASS_DIR, '.work')
+CLASS_DIR           = os.path.dirname(__file__)
+WORKING_DIR         = os.path.join(CLASS_DIR, 'work')
 # Meshes associated with the geometry
-MESH_DIR        = os.path.join(CLASS_DIR, 'meshes')
-TEST_MESH       = os.path.join(MESH_DIR, 'test.msh')
-COARSE_MESH     = os.path.join(MESH_DIR, 'coarse.msh')
-FINE_MESH       = os.path.join(MESH_DIR, 'fine.msh')
+MESH_DIR            = os.path.join(CLASS_DIR, 'meshes')
+TEST_MESH           = os.path.join(MESH_DIR, 'test.msh')
+COARSE_MESH         = os.path.join(MESH_DIR, 'coarse.msh')
+FINE_MESH           = os.path.join(MESH_DIR, 'fine.msh')
 # Templates for the .edp files
 TEMPLATE_DIR        = os.path.join(CLASS_DIR, 'edp_templates')
 TEMPLATE_BASEFLOW   = os.path.join(TEMPLATE_DIR, 'baseflow')
@@ -24,8 +24,10 @@ BASEFLOW_CONV       = os.path.join(WORKING_DIR, 'baseflow_conv')
 BASEFLOW_DATA       = os.path.join(WORKING_DIR, 'baseflow_data')
 BASEFLOW_OTHER_DATA = os.path.join(WORKING_DIR, 'baseflow_other_data')
 OPENLOOP_EDP        = os.path.join(WORKING_DIR, 'openloop.edp')
+CLOSEDLOOP_EDP      = os.path.join(WORKING_DIR, 'closedloop.edp')
 SIMOUT              = os.path.join(WORKING_DIR, 'simout')
 SIMIN               = os.path.join(WORKING_DIR, 'simin')
+KFILE               = os.path.join(WORKING_DIR, 'k')
 # Geometry of the step
 ymax            =  1.0
 ymin            = -1.0
@@ -35,18 +37,18 @@ xmin            = -2.0
 
 # TODO :
 #  - check for longer experiment or comensurable ones for baseflow data
-#  - N and dt not required for baseflow
 class Step(TimeDomainSimulator):
     def __init__(self):
         self.DATABASE_FILE = os.path.join(CLASS_DIR,'STEP.db')
         # Initialise database and default parameters for the benchmark
         self.main_init()
         # Initialise database tables
-        # self.create_table('baseflow',['Re real', 'dt real', 'N real', 'mesh text', 'data text'])
         self.create_table('baseflow',['Re real', 'mesh text', 'data text'])
 
         self.create_table('openloop',['config text', 'ioconfig text', \
                                       'casename text', 'inputs array', 'outputs array'])
+        self.create_table('closedloop',['config text', 'ioconfig text', \
+                                      'casename text', 'inputs array', 'outputs array', 'K array'])
         # Create working temp directory if it does not exists
         if not os.path.exists(WORKING_DIR):
             os.mkdir(WORKING_DIR)
@@ -265,7 +267,7 @@ class Step(TimeDomainSimulator):
         data = self.get_openloop_simulation(name)
         if not force and data:
             self.print_msg('Open-loop simulation named %s already found, returning.' %(name))
-            return data
+            return data['out']
         # Try to get baseflow data
         bf_data = self.get_baseflow_data()
         if not bf_data:
@@ -323,21 +325,17 @@ class Step(TimeDomainSimulator):
     def get_openloop_simulation(self, name):
         data    = []
         c       = self.db.cursor()
-        c.execute('SELECT inputs FROM openloop WHERE config=? AND ioconfig=? AND casename=?',
+        c.execute('SELECT * FROM openloop WHERE config=? AND ioconfig=? AND casename=?',
                   (self.reduced_id, self.ioconfig_str, name))
         tmp = c.fetchone()
-        data = {'in':[],'out':[]}
-        if tmp:
-            data['in'] = np.reshape(tmp,[self.N, self.nw + self.nu],order='F')
-        c.execute('SELECT outputs FROM openloop WHERE config=? AND ioconfig=? AND casename=?',
-                  (self.reduced_id, self.ioconfig_str, name))
-        tmp = c.fetchone()
-        if tmp:
-            data['out'] = np.reshape(tmp,[self.N, 1 + self.nz + self.ny],order='F')
-        if not data['in'] and not data['out']:
+        if not tmp:
+            # Nothing found
             return []
-        else:
-            return data
+        # Otherwise, return the data
+        data        = {'in':[],'out':[]}
+        data['in']  = np.reshape(tmp[3],[self.N, self.nw + self.nu],order='F')
+        data['out'] = np.reshape(tmp[4],[self.N, 1 + self.nz + self.ny],order='F')
+        return data
 
     def get_io_placeholders(self):
         ph = {'DECLARATIONS':'','INITIALISATION':'','INPUTS':'','OUTPUTS':''}
@@ -400,6 +398,71 @@ class Step(TimeDomainSimulator):
         for i,w in enumerate(self.noises):
             s[:,i] = w.signal(self.N, seed=seed)
         return s
+    # --------------------------------------------------------------------------
+    # ClOSED LOOP
+    # --------------------------------------------------------------------------
+    def simulate_closedloop(self, name, K, force=False, seed = []):
+        # Check whether this simulation already exists based on its name
+        data = self.get_closedloop_simulation(name)
+        if not force and data:
+            self.print_msg('Closed-loop simulation named %s already found, returning.' %(name))
+            return data['out']
+        # Try to get baseflow data
+        bf_data = self.get_baseflow_data()
+        if not bf_data:
+            self.print_msg('No existing baseflow for this configuration...Compute it first.')
+            return
+        # Check dimensions of control law
+        err_msg = self.check_K(K)
+        if err_msg:
+            self.print_msg(err_msg)
+            return
+        self.clean_temp_files()
+        # Noise input signal
+        w               = self.get_noise_signals(seed=seed)
+        # Store the input signal into the file SIMIN
+        sim.np_to_freefem_file(SIMIN, w)
+        # Store the control law matrices to associated files
+        sim.K_to_freefem_file(KFILE, K)
+        # At this point, the simulation can be launched
+        # Store baseflow data in associated file
+        sim.write_file(BASEFLOW_DATA, bf_data)
+        # Assemble EDP file for open-loop simulation
+        self.make_closedloop_edp_file()
+        # Launching Simulation
+        # sim.launch_edp_file(CLOSEDLOOP_EDP)
+        # Simulation is done, reading and storing
+        # output_signals = sim.freefem_data_file_to_np(SIMOUT)
+        # self.store_closedloop_data(name, K, w, output_signals)
+        # return output_signals
+        return []
+
+    def make_closedloop_edp_file(self):
+        return ''
+
+    def get_closedloop_simulation(self, name):
+        data    = []
+        c       = self.db.cursor()
+        c.execute('SELECT * FROM closedloop WHERE config=? AND ioconfig=? AND casename=?',
+                  (self.reduced_id, self.ioconfig_str, name))
+        tmp = c.fetchone()
+        if not tmp:
+            # Nothing found
+            return []
+        # Otherwise collect and return the data
+        data        = {'in':[],'out':[], 'K':[]}
+        data['in']  = np.reshape(tmp[3],[self.N, self.nw + self.nu],order='F')
+        data['out'] = np.reshape(tmp[4],[self.N, 1 + self.nz + self.ny],order='F')
+        data['K']   = db_K_to_ABCD(tmp[5], self.nu, self.ny)
+        return data
+    def check_K(self, K):
+        nyk = K['C'].shape[0]
+        nuk = K['B'].shape[1]
+        if nyk!=self.nu:
+            return 'Incoherent dimension of controller output: got %d, expected %d'%(nyk, self.nu)
+        if nuk!=self.ny:
+            return 'Incoherent dimension of controller input: got %d, expected %d'%(nuk, self.ny)
+        return ''
     # --------------------------------------------------------------------------
     # PLOTING
     # --------------------------------------------------------------------------
@@ -559,7 +622,7 @@ class GaussianIO(SystemIO):
                        '};'])
         # Init: input signal read
         init = ''
-        # Associated
+        # Associated assignation
         assign = 'rhs1[] += inputSignals(i,%d)*%s1[]; // input %s' %(id - 1, input_id, input_id)
         return [input_id, decl, init, assign]
 
@@ -582,6 +645,16 @@ class GaussianNoiseIO(GaussianIO):
         return np.array(rng.normal(scale = self.sigma_time, size = N))
 
 ## MISC FUN
+
+def db_K_to_ABCD(data, ny, nu):
+    # First, need to determine nk
+    n       = data.shape[0]
+    nk      = np.roots([1, ny + nu, ny*nu-n])
+    nk      = int(np.max(nk))
+    #
+    ABCD    = np.reshape(data,[nk + ny, nk + nu], order='C')
+    return [ABCD[0:nk,0:nk],ABCD[0:nk,nk:nk+nu],ABCD[nk:nk+ny,0:nk],ABCD[nk:nk+ny,nk:nk+nu]]
+
 def db_data_to_object(data):
     s       = Step()
     s.Re    = data[0]

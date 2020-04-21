@@ -78,6 +78,11 @@ def file_to_str(target):
 def launch_edp_file(target):
     subprocess.run('FreeFem++ -nw {} > log'.format(target),shell=True)
 
+def K_to_freefem_file(target, K):
+    ABCD = np.hstack(K['A'],K['B'])
+    ABCD = np.hstack(ABCD, np.hstack(K['C'],K['D']))
+    np_to_freefem_file(target,ABCD)
+    
 def np_to_freefem_file(target, m):
     np.savetxt(target,m, delimiter=' ', fmt='%.16f', header='%d %d'%(m.shape[0], m.shape[1]),comments='')
 
