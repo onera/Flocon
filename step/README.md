@@ -13,11 +13,11 @@ This use-case implements the benchmark described in the following article
   * [Initialisation](#initialisation)
   * [Base-flow](#base-flow-computation)
   * [Open-loop simulation](#openloop-simulation)
-
+* [Acknowledgement](#acknowledgement)
 
 ## Introduction
 
-
+The default configuration is the following:
 ![Default configuration](./static/step_default.png)
 
 ## Requirements
@@ -98,16 +98,7 @@ plt.show()
 ```
 If you attempt to make a simulation which name already exists in the database, the simulation data are returned.
 
-## Adjusting the configuration
-
-### Actuators
-### Sensors
-
 
 ## Acknowledgement  
 
 Special thanks to Denis Sipp and Colin Leclercq for their precious help for the integration of this use-case.
-
-## References
-
-[1] Hervé, A., Sipp, D., Schmid, P. J., & Samuelides, M. (2012). A physics-based approach to flow control using system identification. Journal of Fluid Mechanics, 702, 26-58.
