@@ -1,18 +1,22 @@
 # Step use-case
 
+This use-case implements the benchmark described in the following article
+
+> [1] Hervé, A., Sipp, D., Schmid, P. J., & Samuelides, M. (2012). A physics-based approach to flow control using system identification. Journal of Fluid Mechanics, 702, 26-58.
+
 
 ## Table of content
 
 * [Introduction](#introduction)
   * [Requirements](#requirements)
-* [Getting started](#getting_started)
+* [Getting started](#getting-started)
   * [Initialisation](#initialisation)
-  * [Base-flow](#base-flow)
+  * [Base-flow](#base-flow-computation)
+  * [Open-loop simulation](#openloop-simulation)
 
 
 ## Introduction
 
-This use case comes from the article [1] and is schematised in the Figure below.
 
 ![Default configuration](./static/step_default.png)
 
