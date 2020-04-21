@@ -1,17 +1,33 @@
 # Step use-case
 
+
+## Table of content
+
+* [Introduction](#introduction)
+  * [Requirements](#requirements)
+* [Getting started](#gettingstarted)
+  * [Initialisation](#initialisation)
+  * [Base-flow](#baseflow)
+
+
+<a name="introduction"/>
+## Introduction
+
 This use case comes from the article [1] and is schematised in the Figure below.
 
 ![Default configuration](./static/step_default.png)
 
+<a name="requirements"/>
 ## Requirements
 
 * [FreeFem++](https://freefem.org/) for the core of the simulator
 * numpy (>= 1.18) for input/output signals
 * matplotlib
 
+<a name="gettingstarted"/>
 ## Getting started
 
+<a name="initialisation"/>
 ### Initialisation
 
 The benchmark can be loaded as follows,
@@ -28,6 +44,7 @@ step.plot_config()
 ```
 This creates a (sqlite) database in which simulations results are stored.
 
+<a name="baseflow"/>
 ### Base-flow computation
 
 Simulations are performed around an equilibrium called base-flow which  must be computed as follows:
