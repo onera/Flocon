@@ -65,17 +65,16 @@ Note that in addition to the physical configuration of the inputs and outputs (s
 By default, perturbations are handled within Flocon so that the user need only to provide the control input. For instance, to simulate the open-loop with no command input (but with default noise):
 
 ```python
-u       = np.zeros([b.N,1])                   # control signal
-out     = b.simulate_openloop('openloop', u)  # name of the simulation
-t       = out[:,0]                            # time is the first output
-z       = out[:,1]                            # then comes the performances outputs
-y       = out[:,2]                            # and the measurement outputs
+u       = np.zeros([b.N,1])             # control signal
+out     = b.simulate_openloop('OL', u)  # name of the simulation and comand
+t       = out[:,0]                      # time is the first output
+z       = out[:,1]                      # then comes the performances outputs
+y       = out[:,2]                      # and the measurement outputs
 # plotting the signals
 plt.plot(t, z, t, y)
 plt.show()
 ```
-
-
+If you attempt to make a simulation which name already exists in the database, the simulation data are returned.
 
 ## Adjusting the configuration
 
