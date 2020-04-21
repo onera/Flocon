@@ -82,6 +82,11 @@ plt.show()
 ### Actuators
 ### Sensors
 
+
+## Acknowledgement  
+
+Special thanks to Denis Sipp and Colin Leclercq for their precious help for the integration of this use-case.
+
 ## References
 
 [1] Hervé, A., Sipp, D., Schmid, P. J., & Samuelides, M. (2012). A physics-based approach to flow control using system identification. Journal of Fluid Mechanics, 702, 26-58.
