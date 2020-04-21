@@ -87,11 +87,11 @@ An open-loop simulation is therefore stored in the database as the parameters in
 By default, perturbations are handled within Flocon so that the user need only to provide the control input. For instance, to simulate the open-loop with no command input (but with default noise):
 
 ```python
-u       = np.zeros([b.N,1])             # control signal
-out     = b.simulate_openloop('OL', u)  # name of the simulation and comand
-t       = out[:,0]                      # time is the first output
-z       = out[:,1]                      # then comes the performances outputs
-y       = out[:,2]                      # and the measurement outputs
+u       = np.zeros([b.N,1])                 # control signal
+out     = step.simulate_openloop('OL', u)   # name of the simulation and comand
+t       = out[:,0]                          # time is the first output
+z       = out[:,1]                          # then comes the performances outputs
+y       = out[:,2]                          # and the measurement outputs
 # plotting the signals
 plt.plot(t, z, t, y)
 plt.show()
