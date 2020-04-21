@@ -1,6 +1,6 @@
 # Flocon
 
-Flocon is an open-source benchmark library aimed at gathering *realistic* flow control problems.
+Flocon is an open-source benchmark library aimed at gathering flow control problems.
 
 These benchmarks are built to be relevant for various topics such as model reduction/identification, actuators/sensors placement, control synthesis and its implantation.
 For that purpose, each benchmark can be modified (e.g. number, position and nature of actuators/sensors) to highlight some specific point.
