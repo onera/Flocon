@@ -92,7 +92,8 @@ class Step(TimeDomainSimulator):
     @tf.setter
     def tf(self, t):
         self.N = int(round(t/self.dt,0))
-        print('Number of iterations changed to {}'.format(self.N))
+        self.print_msg('Number of iterations updated...')
+
 
     @property
     def mesh_file(self):
@@ -280,6 +281,7 @@ class Step(TimeDomainSimulator):
             return
         self.clean_temp_files()
         # Completing the input signal with the noise
+        self.print_msg('Generating noise...')
         w               = self.get_noise_signals(seed=seed)
         input_signals   = np.hstack([w,signals])
         # Store the input signal into the file SIMIN
@@ -288,15 +290,20 @@ class Step(TimeDomainSimulator):
         # Store baseflow data in associated file
         sim.write_file(BASEFLOW_DATA, bf_data)
         # Assemble EDP file for open-loop simulation
+        self.print_msg('Creating open-loop EDP file...')
         self.make_openloop_edp_file()
         # Launching Simulation
+        self.print_msg('Launching open-loop simulation...')
         sim.launch_edp_file(OPENLOOP_EDP)
         # Simulation is done, reading and storing
+        self.print_msg('Open-loop simulation done...')
         output_signals = sim.freefem_data_file_to_np(SIMOUT)
+        self.print_msg('Storing simulation data...')
         self.store_openloop_data(name, input_signals, output_signals)
         return output_signals
 
     def store_openloop_data(self, name, input_signals, output_signals):
+        print(output_signals)
         c = self.db.cursor()
         c.execute('INSERT INTO openloop VALUES (?,?,?,?,?)',
                   (self.reduced_id, self.ioconfig_str, name, input_signals, output_signals))
@@ -311,11 +318,9 @@ class Step(TimeDomainSimulator):
         content     = content + sim.assign_freefem_var('dt', self.dt)
         content     = content + sim.assign_freefem_var('N', self.N)
         content     = content + sim.assign_freefem_var('NL', self.NL)
-
         content     = content + '\n// End of parameters declaration \n' + openloop_temp
         # Adding io
-        content = sim.replace_placeholders(self.get_io_placeholders(), content)
-
+        content     = sim.replace_placeholders(self.get_io_placeholders(), content)
         content     = sim.replace_placeholders(self.get_placeholders(), content)
 
         #
@@ -328,13 +333,15 @@ class Step(TimeDomainSimulator):
         c.execute('SELECT * FROM openloop WHERE config=? AND ioconfig=? AND casename=?',
                   (self.reduced_id, self.ioconfig_str, name))
         tmp = c.fetchone()
-        if not tmp:
+        if tmp is None:
+            return[]
+        if tmp[4] is None:
             # Nothing found
             return []
         # Otherwise, return the data
         data        = {'in':[],'out':[]}
-        data['in']  = np.reshape(tmp[3],[self.N, self.nw + self.nu],order='F')
-        data['out'] = np.reshape(tmp[4],[self.N, 1 + self.nz + self.ny],order='F')
+        data['in']  = np.reshape(tmp[3],[self.N, self.nw + self.nu],order='C')
+        data['out'] = np.reshape(tmp[4],[self.N, 1 + self.nz + self.ny],order='C')
         return data
 
     def get_io_placeholders(self):
@@ -347,9 +354,9 @@ class Step(TimeDomainSimulator):
                                    'file >> inputSignals;',\
                                    '};',''])
         ph['DECLARATIONS'] = ph['DECLARATIONS'] + input_signals
-        D   = []
+        D   = ['real[int] inputi(%d);'%(self.nw + self.nu)]
         I   = []
-        IA  = []
+        IA  = ['for (int k=0; k< %d; k++)'%(self.nw + self.nu),'{','inputi(k) = inputSignals(i,k);','};']
         OA  = []
         # Inputs
         nu = 0
@@ -360,8 +367,8 @@ class Step(TimeDomainSimulator):
         [D, I, OA, ny,z_names] = iolist_to_fem(self.performances, D, I, OA,'z', ny)
         [D, I, OA, ny,y_names] = iolist_to_fem(self.sensors, D, I, OA,'y', ny)
         # Saving outputs
-        o_names = z_names + y_names
-        SEP = '"   "'
+        o_names     = z_names + y_names
+        SEP         = '"   "'
         save_outputs = '\n'.join(['{',\
                                  'ofstream f("@SIMOUT",append);',\
                                  'f.precision(16);',\
@@ -623,7 +630,7 @@ class GaussianIO(SystemIO):
         # Init: input signal read
         init = ''
         # Associated assignation
-        assign = 'rhs1[] += inputSignals(i,%d)*%s1[]; // input %s' %(id - 1, input_id, input_id)
+        assign = 'rhs1[] += inputi(%d)*%s1[]; // input %s' %(id - 1, input_id, input_id)
         return [input_id, decl, init, assign]
 
 
