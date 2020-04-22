@@ -118,6 +118,7 @@ plt.show()
 ```
 
 
+
 ## Modifying the configuration
 
 In order to perform some actuator or sensor placement studies, it is possible to add/modify the inputs and outputs for this configuration.

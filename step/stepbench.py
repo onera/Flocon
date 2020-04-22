@@ -245,7 +245,8 @@ class Step(TimeDomainSimulator):
               'BASEFLOW_DATA': BASEFLOW_DATA,
               'BASEFLOW_OTHER_DATA':BASEFLOW_OTHER_DATA,
               'SIMOUT':SIMOUT,
-              'SIMIN':SIMIN}
+              'SIMIN':SIMIN,
+              'KFILE':KFILE}
         return ph
 
     def make_baseflow_edp_file(self, is_restart = False):
@@ -303,7 +304,6 @@ class Step(TimeDomainSimulator):
         return output_signals
 
     def store_openloop_data(self, name, input_signals, output_signals):
-        print(output_signals)
         c = self.db.cursor()
         c.execute('INSERT INTO openloop VALUES (?,?,?,?,?)',
                   (self.reduced_id, self.ioconfig_str, name, input_signals, output_signals))
@@ -344,11 +344,15 @@ class Step(TimeDomainSimulator):
         data['out'] = np.reshape(tmp[4],[self.N, 1 + self.nz + self.ny],order='C')
         return data
 
-    def get_io_placeholders(self):
+    def get_io_placeholders(self, with_control=False):
         ph = {'DECLARATIONS':'','INITIALISATION':'','INPUTS':'','OUTPUTS':''}
         # Reading input signal
+        if with_control:
+            nin = self.nw
+        else:
+            nin = self.nw + self.ny
         input_signals = '\n'.join(['// Input signals matrix',\
-                                   'real[int,int] inputSignals(%d, %d);'%(self.N, self.nw + self.ny),\
+                                   'real[int,int] inputSignals(%d, %d);'%(self.N, nin),\
                                    '{',\
                                    'ifstream file("%s");'%(SIMIN),\
                                    'file >> inputSignals;',\
@@ -356,18 +360,25 @@ class Step(TimeDomainSimulator):
         ph['DECLARATIONS'] = ph['DECLARATIONS'] + input_signals
         D   = ['real[int] inputi(%d);'%(self.nw + self.nu)]
         I   = []
-        IA  = ['for (int k=0; k< %d; k++)'%(self.nw + self.nu),'{','inputi(k) = inputSignals(i,k);','};']
+        IA = ['for (int k=0; k< %d; k++)'%(nin),'{','inputi(k) = inputSignals(i,k);','};']
+
+        if with_control:
+            IA = IA + ['for (int k=%d; k< %d; k++)'%(nin,nin + self.nu),'{','inputi(k) = yk(k-%d);'%(nin),'};']
         OA  = []
         # Inputs
         nu = 0
-        [D, I, IA, nu, tmp] = iolist_to_fem(self.noises, D, I, IA, 'w',nu)
-        [D, I, IA, nu, tmp] = iolist_to_fem(self.actuators, D, I, IA,'u', nu)
+        [D, I, IA, nu, tmp]     = iolist_to_fem(self.noises, D, I, IA, 'w',nu)
+        [D, I, IA, nu, tmp]     = iolist_to_fem(self.actuators, D, I, IA,'u', nu)
         # Outputs
         ny = 0
-        [D, I, OA, ny,z_names] = iolist_to_fem(self.performances, D, I, OA,'z', ny)
-        [D, I, OA, ny,y_names] = iolist_to_fem(self.sensors, D, I, OA,'y', ny)
+        [D, I, OA, ny,z_names]  = iolist_to_fem(self.performances, D, I, OA,'z', ny)
+        [D, I, OA, ny,y_names]  = iolist_to_fem(self.sensors, D, I, OA,'y', ny)
         # Saving outputs
         o_names     = z_names + y_names
+        if with_control:
+            OA.append('// Update controller input')
+            for i,y in enumerate(y_names):
+                OA.append('uk(%d) = %s;'%(i, y))
         SEP         = '"   "'
         save_outputs = '\n'.join(['{',\
                                  'ofstream f("@SIMOUT",append);',\
@@ -376,6 +387,7 @@ class Step(TimeDomainSimulator):
                                  ('<<%s<<'%(SEP)).join(o_names),\
                                  '<< endl;',\
                                  '};'])
+        OA.append('// Saving outputs')
         OA.append(save_outputs)
         #
         ph['DECLARATIONS']      = ph['DECLARATIONS'] + '\n'.join(D)
@@ -430,22 +442,78 @@ class Step(TimeDomainSimulator):
         # Store the input signal into the file SIMIN
         sim.np_to_freefem_file(SIMIN, w)
         # Store the control law matrices to associated files
-        sim.K_to_freefem_file(KFILE, K)
+        sim.np_to_freefem_file(KFILE, K_to_ABCD(K))
         # At this point, the simulation can be launched
         # Store baseflow data in associated file
         sim.write_file(BASEFLOW_DATA, bf_data)
         # Assemble EDP file for open-loop simulation
-        self.make_closedloop_edp_file()
+        self.print_msg('Creating closed-loop EDP file...')
+        self.make_closedloop_edp_file(K['A'].shape[0])
         # Launching Simulation
-        # sim.launch_edp_file(CLOSEDLOOP_EDP)
+        sim.launch_edp_file(CLOSEDLOOP_EDP)
         # Simulation is done, reading and storing
-        # output_signals = sim.freefem_data_file_to_np(SIMOUT)
-        # self.store_closedloop_data(name, K, w, output_signals)
+        output_signals = sim.freefem_data_file_to_np(SIMOUT)
+        self.store_closedloop_data(name, K, w, output_signals)
         # return output_signals
-        return []
+        return output_signals
 
-    def make_closedloop_edp_file(self):
-        return ''
+    def make_closedloop_edp_file(self, nk):
+        # Read associated EDP template
+        closedloop_temp     = sim.read_template(TEMPLATE_OPENLOOP)
+        #
+        content             = '// Configuration parameters declaration, case\n'
+        content             = content + sim.assign_freefem_var('Re', self.Re)
+        content             = content + sim.assign_freefem_var('dt', self.dt)
+        content             = content + sim.assign_freefem_var('N', self.N)
+        content             = content + sim.assign_freefem_var('NL', self.NL)
+        content             = content + '\n// End of parameters declaration \n' + closedloop_temp
+        # Inputs outputs
+        ph                  = self.get_io_placeholders(with_control=True)
+        # Control law matrices
+        load_K = ['// Control-law realisation and signals',\
+                  'real[int,int] ABCD(%d,%d);'%(nk + self.nu, nk + self.ny),\
+                  'real[int,int] Ak(%d,%d);'%(nk,nk),\
+                  'real[int,int] Bk(%d,%d);'%(nk,self.ny),\
+                  'real[int,int] Ck(%d,%d);'%(self.nu, nk),\
+                  'real[int,int] Dk(%d,%d);'%(self.nu, self.ny),\
+                  'real[int] xk(%d),xkp1(%d),yk(%d),uk(%d);'%(nk, nk, self.nu,self.ny),\
+                  '// Reading ABCD from file',\
+                  '{',\
+                  'ifstream file("%s");'%(KFILE),\
+                  'file >> ABCD;',\
+                  '};',\
+                  '// Splitting ABCD',\
+                  'int it,jt;']
+        load_K.append(fem_slice('ABCD','Ak',0,nk, 0,nk))
+        load_K.append(fem_slice('ABCD','Bk',0,nk, nk,nk+self.ny))
+        load_K.append(fem_slice('ABCD','Ck',nk,nk+self.nu,0,nk))
+        load_K.append(fem_slice('ABCD','Dk',nk,nk+self.nu,nk,nk+self.ny))
+        ph['DECLARATIONS']      = '\n'.join(load_K) + '\n'+ ph['DECLARATIONS']
+        ph['INITIALISATION']    = ph['INITIALISATION'] +'\n'+ '\n'.join(['xk = 0;','xkp1=0;'])
+        # Update controller output
+        ph['INPUTS']            = '\n'.join(['//Controller output update',\
+                                             'xk = xkp1;',\
+                                             'yk = Ck*xk;',\
+                                             'yk += Dk*uk;']) +'\n' + ph['INPUTS']
+        # Update controller state
+        xk_update = '\n'.join(['//Controller state update',\
+                              'xkp1 = Ak*xk;',\
+                              'xkp1 += Bk*uk;'])
+        ph['OUTPUTS']           = ph['OUTPUTS'] + xk_update
+        #
+        #
+        content             = sim.replace_placeholders(ph, content)
+        content             = sim.replace_placeholders(self.get_placeholders(), content)
+        #
+        sim.write_file(CLOSEDLOOP_EDP, content)
+        return content
+
+    def store_closedloop_data(self, name, K, w, output_signals):
+        print(output_signals)
+        c = self.db.cursor()
+        c.execute('INSERT INTO closedloop VALUES (?,?,?,?,?,?)',
+                  (self.reduced_id, self.ioconfig_str, name, w, output_signals, K_to_ABCD(K) ))
+        self.db.commit()
 
     def get_closedloop_simulation(self, name):
         data    = []
@@ -458,8 +526,8 @@ class Step(TimeDomainSimulator):
             return []
         # Otherwise collect and return the data
         data        = {'in':[],'out':[], 'K':[]}
-        data['in']  = np.reshape(tmp[3],[self.N, self.nw + self.nu],order='F')
-        data['out'] = np.reshape(tmp[4],[self.N, 1 + self.nz + self.ny],order='F')
+        data['in']  = np.reshape(tmp[3],[self.N, self.nw],order='C')
+        data['out'] = np.reshape(tmp[4],[self.N, 1 + self.nz + self.ny],order='C')
         data['K']   = db_K_to_ABCD(tmp[5], self.nu, self.ny)
         return data
     def check_K(self, K):
@@ -583,7 +651,8 @@ class BorderIntegralIO(SystemIO):
         output_id   = '%s%dBI'%(cat,id)
         decl        = '\n'.join(['// OUTPUT %s'%(output_id),\
                                 'Up support%s=(x>=%.2f)*(x<=%2f)*%s;'%(output_id, self.x[0], self.x[1], side)])
-        init        = 'real %s = int1d(th,2)(dy(u)*support%s);'%(output_id, output_id)
+        # init        = 'real %s = int1d(th,2)(dy(u)*support%s);'%(output_id, output_id)
+        init        = 'real %s;'%(output_id)
         assign      = '%s = int1d(th,2)(dy(u)*support%s);'%(output_id, output_id)
         return [output_id, decl, init, assign]
 
@@ -652,6 +721,11 @@ class GaussianNoiseIO(GaussianIO):
         return np.array(rng.normal(scale = self.sigma_time, size = N))
 
 ## MISC FUN
+def K_to_ABCD(K):
+    AB  = np.hstack((K['A'],K['B']))
+    CD = np.hstack((K['C'],K['D']))
+    ABCD = np.vstack((AB,CD))
+    return ABCD
 
 def db_K_to_ABCD(data, ny, nu):
     # First, need to determine nk
@@ -669,6 +743,21 @@ def db_data_to_object(data):
     s.N     = data[2]
     s.mesh  = data[3]
     return s
+
+def fem_slice(src, targ, rows, rowe, cols, cole):
+    out = ['// Slicing %s from %s'%(targ, src),\
+            'it = 0;',\
+            'for (int i=%d;i<%d;i++)'%(rows, rowe),\
+            '{',\
+            'jt = 0;',\
+            'for (int j=%d;j<%d;j++)'%(cols,cole),\
+            '{',\
+            '%s(it,jt) = %s(i,j);'%(targ, src),\
+            'jt += 1;',\
+            '};',\
+            'it += 1;',\
+            '};']
+    return '\n'.join(out)
 
 def iolist_to_fem(li, D, I, A, cat, ctr):
     names = []
