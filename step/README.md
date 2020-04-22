@@ -2,7 +2,7 @@
 
 This use-case corresponds to the benchmark described in the following article
 
-> [1] Hervé, A., Sipp, D., Schmid, P. J., & Samuelides, M. (2012). A physics-based approach to flow control using system identification. Journal of Fluid Mechanics, 702, 26-58.
+> [1] Sipp, D. & Schmid, P. J. (2016). Linear Closed-Loop Control of Fluid Instabilities and Noise-Induced Perturbations: A Review of Approaches and Tools. Applied Mechanics Reviews.
 
 This benchmark was first made available [on Denis Sipp's Github page](https://github.com/denissipp/AMR_Sipp_Schmid_2016). The version here is mainly a wrapper than simplifies its use for identification and control design and allow for a simple modification of the input/output configuration.
 

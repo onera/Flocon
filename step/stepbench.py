@@ -74,7 +74,7 @@ class Step(TimeDomainSimulator):
         down_sens       = BorderIntegralIO([10.3, 10.7],'bottom')
         self.add_to_list(self.performances , down_sens)
         # Simulation parameter
-        self.mesh       = 'test'   # mesh to be used
+        self.mesh       = 'coarse'   # mesh to be used
         self.N          = 250000     # number of iterations
         self.dt         = 0.002      # integration time step
         self.NL         = False      # activation of non-linear term
@@ -650,7 +650,7 @@ class BorderIntegralIO(SystemIO):
             side = '(y<=0.1)'
         output_id   = '%s%dBI'%(cat,id)
         decl        = '\n'.join(['// OUTPUT %s'%(output_id),\
-                                'Up support%s=(x>=%.2f)*(x<=%2f)*%s;'%(output_id, self.x[0], self.x[1], side)])
+                                'Up support%s=(x<=%2f)*(x>=%.2f)*%s;'%(output_id, self.x[1], self.x[0], side)])
         # init        = 'real %s = int1d(th,2)(dy(u)*support%s);'%(output_id, output_id)
         init        = 'real %s;'%(output_id)
         assign      = '%s = int1d(th,2)(dy(u)*support%s);'%(output_id, output_id)
@@ -704,21 +704,21 @@ class GaussianIO(SystemIO):
 
 
 class GaussianNoiseIO(GaussianIO):
-    def __init__(self, x, y, sigma_x,  sigma_time, sigma_y = []):
+    def __init__(self, x, y, sigma_x,  amplitude, sigma_y = []):
         super().__init__(x, y, sigma_x, sigma_y)
-        self.sigma_time = sigma_time
+        self.amplitude = amplitude
     @property
     def str_id(self):
         str = super().str_id
         str = str.replace('G','GN')
-        return str +',%f'%(self.sigma_time)
+        return str +',%f'%(self.amplitude)
     def signal(self, N, seed= []):
         if seed is None:
             rng = np.random.default_rng()
         else:
             rng = np.random.default_rng(seed=seed)
         #
-        return np.array(rng.normal(scale = self.sigma_time, size = N))
+        return self.amplitude * np.array(rng.normal(scale = 1, size = N))
 
 ## MISC FUN
 def K_to_ABCD(K):
@@ -739,9 +739,7 @@ def db_K_to_ABCD(data, ny, nu):
 def db_data_to_object(data):
     s       = Step()
     s.Re    = data[0]
-    s.dt    = data[1]
-    s.N     = data[2]
-    s.mesh  = data[3]
+    s.mesh  = data[1]
     return s
 
 def fem_slice(src, targ, rows, rowe, cols, cole):
