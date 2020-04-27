@@ -81,7 +81,10 @@ def launch_edp_file(target, opt=''):
         raise Exception("FreeFem++ not found.")
     if opt:
         opt = '-'+opt
-    subprocess.run('%s %s %s > log'%(cmd, opt, target),shell=True)
+    shell = True
+    if os.platform='win32':
+        shell=False
+    subprocess.run('%s %s %s > log'%(cmd, opt, target),shell=shell)
 
 def ABCD_to_freefem_file(target, ABCD):
     np_to_freefem_file(target,ABCD)
