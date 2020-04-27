@@ -1,5 +1,4 @@
-load "MUMPS_seq"
-defaulttoMUMPSseq();
+@SOLVER
 
 // DECLARATIONS, FILE LOADING ..................................................
 mesh th=readmesh("@MESH");

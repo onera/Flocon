@@ -4,7 +4,7 @@ import io
 import numpy as np
 import subprocess
 import os
-
+import sys
 def adapt_array(arr):
     return arr.tobytes()
 
@@ -75,8 +75,13 @@ def file_to_str(target):
 # ------------------------------------------------------------------------------
 # EDP interface
 # ------------------------------------------------------------------------------
-def launch_edp_file(target):
-    subprocess.run('FreeFem++ -nw {} > log'.format(target),shell=True)
+def launch_edp_file(target, opt=''):
+    cmd = find_ex('FreeFem++')
+    if cmd is None:
+        raise Exception("FreeFem++ not found.")
+    if opt:
+        opt = '-'+opt
+    subprocess.run('%s %s %s > log'%(cmd, opt, target),shell=True)
 
 def ABCD_to_freefem_file(target, ABCD):
     np_to_freefem_file(target,ABCD)
@@ -107,3 +112,17 @@ def replace_placeholders(ph_list, str):
             path_str = path_str.replace('\\','\\\\')
         str = str.replace('@'+ph_name, path_str)
     return str
+
+
+def find_ex(ex):
+    path    = os.environ['PATH']
+    paths   = path.split(os.pathsep)
+    ext     = ''
+    if sys.platform == 'win32':
+        ext = '.exe'
+    exfile = ex + ext
+    for p in paths:
+        f = os.path.join(p, exfile)
+        if os.path.isfile(f):
+            return f
+    return None

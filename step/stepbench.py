@@ -28,6 +28,7 @@ CLOSEDLOOP_EDP      = os.path.join(WORKING_DIR, 'closedloop.edp')
 SIMOUT              = os.path.join(WORKING_DIR, 'simout')
 SIMIN               = os.path.join(WORKING_DIR, 'simin')
 KFILE               = os.path.join(WORKING_DIR, 'k')
+TMP_FILE            = os.path.join(WORKING_DIR,'tmp.edp')
 # Geometry of the step
 ymax            =  1.0
 ymin            = -1.0
@@ -52,6 +53,36 @@ class Step(TimeDomainSimulator):
         # Create working temp directory if it does not exists
         if not os.path.exists(WORKING_DIR):
             os.mkdir(WORKING_DIR)
+        # Some preliminary tests
+        # FreeFem++ executable file
+        out         = sim.find_ex('FreeFem++')
+        if out is None:
+            raise Exception("FreeFem++ not found. Make sure it is installed.")
+        # Trying to determine whether the MUMPS solver is available in FreeFem++ install
+        self.test_freefem_solver()
+
+    def test_freefem_solver(self):
+        content = '\n'.join(['try',\
+                             '{',\
+                             'load "MUMPS_seq"',\
+                             'cout << "SOLVER FOUND" << endl;',\
+                             '}',\
+                             'catch(...){',\
+                             'cout << "SOLVER NOT FOUND" << endl;',\
+                             '}',\
+                             ])
+        #
+        sim.write_file(TMP_FILE, content)
+        sim.launch_edp_file(TMP_FILE, 'ne')
+        f   = open('log', 'r')
+        str = f.read()
+        id  = str.find('SOLVER FOUND')
+        if id:
+            self.solver='mumps'
+        else:
+            self.print_msg('FreeFem "MUMPS" solver not found, switching to default.')
+            self.solver='default'
+        f.close()
 
     def init_default_parameters(self):
         self.name       = 'default'
@@ -246,7 +277,10 @@ class Step(TimeDomainSimulator):
               'BASEFLOW_OTHER_DATA':BASEFLOW_OTHER_DATA,
               'SIMOUT':SIMOUT,
               'SIMIN':SIMIN,
-              'KFILE':KFILE}
+              'KFILE':KFILE,
+              'SOLVER':''}
+        if self.solver == 'mumps':
+            ph['SOLVER'] = 'load "MUMPS_seq"\ndefaulttoMUMPSseq();'
         return ph
 
     def make_baseflow_edp_file(self, is_restart = False):
