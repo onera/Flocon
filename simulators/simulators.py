@@ -75,16 +75,18 @@ def file_to_str(target):
 # ------------------------------------------------------------------------------
 # EDP interface
 # ------------------------------------------------------------------------------
-def launch_edp_file(target, opt=''):
+def launch_edp_file(target, opt='', log=None):
     cmd = find_ex('FreeFem++')
     if cmd is None:
         raise Exception("FreeFem++ not found.")
     if opt:
         opt = '-'+opt
-    if os.name == 'win32':
-        subprocess.run('"%s" %s -f %s > log'%(cmd, opt, target),shell=False)
+    if log is None:
+        log ='log'
+    if os.name == 'nt':
+        subprocess.run('"%s" %s -f %s > %s'%(cmd, opt, target,log),shell=True)
     else:
-        subprocess.run('%s %s %s > log'%(cmd, opt, target),shell=True)
+        subprocess.run('%s %s %s > %s'%(cmd, opt, target,log),shell=True)
 
 
 def ABCD_to_freefem_file(target, ABCD):
@@ -122,7 +124,7 @@ def find_ex(ex):
     path    = os.environ['PATH']
     paths   = path.split(os.pathsep)
     ext     = ''
-    if os.name == 'win32':
+    if os.name == 'win32' or os.name=='nt':
         ext = '.exe'
     exfile = ex + ext
     for p in paths:

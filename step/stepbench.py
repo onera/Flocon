@@ -29,6 +29,7 @@ SIMOUT              = os.path.join(WORKING_DIR, 'simout')
 SIMIN               = os.path.join(WORKING_DIR, 'simin')
 KFILE               = os.path.join(WORKING_DIR, 'k')
 TMP_FILE            = os.path.join(WORKING_DIR,'tmp.edp')
+LOG_FILE            = os.path.join(WORKING_DIR,'log')
 # Geometry of the step
 ymax            =  1.0
 ymin            = -1.0
@@ -63,6 +64,7 @@ class Step(TimeDomainSimulator):
         content = '\n'.join(['try',\
                              '{',\
                              'load "MUMPS_seq"',\
+                             'defaulttoMUMPSseq();',\
                              'cout << "SOLVER FOUND" << endl;',\
                              '}',\
                              'catch(...){',\
@@ -71,11 +73,11 @@ class Step(TimeDomainSimulator):
                              ])
         #
         sim.write_file(TMP_FILE, content)
-        sim.launch_edp_file(TMP_FILE, 'ne')
-        f   = open('log', 'r')
+        sim.launch_edp_file(TMP_FILE, log=LOG_FILE, opt='ne')
+        f   = open(LOG_FILE, 'r')
         str = f.read()
         id  = str.find('SOLVER FOUND')
-        if id:
+        if id>=0:
             self.solver = 'mumps'
         else:
             self.print_msg('FreeFem "MUMPS" solver not found, switching to default.')
@@ -198,7 +200,7 @@ class Step(TimeDomainSimulator):
         # Launch simulation
         self.print_msg('Launching simulation for base-flow computation...')
         self.clean_temp_files()
-        sim.launch_edp_file(BASEFLOW_EDP)
+        sim.launch_edp_file(BASEFLOW_EDP, log=LOG_FILE)
         if self.baseflow_has_converged():
             self.print_msg('Base-flow has converged...')
             data = sim.file_to_str(BASEFLOW_DATA)
@@ -327,7 +329,7 @@ class Step(TimeDomainSimulator):
         self.make_openloop_edp_file()
         # Launching Simulation
         self.print_msg('Launching open-loop simulation...')
-        sim.launch_edp_file(OPENLOOP_EDP)
+        sim.launch_edp_file(OPENLOOP_EDP, log=LOG_FILE)
         # Simulation is done, reading and storing
         self.print_msg('Open-loop simulation done...')
         output_signals = sim.freefem_data_file_to_np(SIMOUT)
@@ -482,7 +484,7 @@ class Step(TimeDomainSimulator):
         self.print_msg('Creating closed-loop EDP file...')
         self.make_closedloop_edp_file(K['A'].shape[0])
         # Launching Simulation
-        sim.launch_edp_file(CLOSEDLOOP_EDP)
+        sim.launch_edp_file(CLOSEDLOOP_EDP, log=LOG_FILE)
         # Simulation is done, reading and storing
         output_signals = sim.freefem_data_file_to_np(SIMOUT)
         self.store_closedloop_data(name, K, w, output_signals)
