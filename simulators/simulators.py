@@ -4,7 +4,7 @@ import io
 import numpy as np
 import subprocess
 import os
-import sys
+
 def adapt_array(arr):
     return arr.tobytes()
 
@@ -82,8 +82,8 @@ def launch_edp_file(target, opt=''):
     if opt:
         opt = '-'+opt
     shell = True
-    if os.platform='win32':
-        shell=False
+    if os.name == 'win32':
+        shell = False
     subprocess.run('%s %s %s > log'%(cmd, opt, target),shell=shell)
 
 def ABCD_to_freefem_file(target, ABCD):
@@ -121,7 +121,7 @@ def find_ex(ex):
     path    = os.environ['PATH']
     paths   = path.split(os.pathsep)
     ext     = ''
-    if sys.platform == 'win32':
+    if os.name == 'win32':
         ext = '.exe'
     exfile = ex + ext
     for p in paths:
