@@ -15,8 +15,6 @@ The list of benchmarks will be completed progressively.
 |-----------:|:---------------------------------------------------|:----------:|
 |   `step`   | The system is an amplifier and the control goal is disturbance rejection. See [this page](step).|  FreeFem++ |
 
-*Remark: If you have a flow problem that you would like to be integrated in this library, contact us to discuss about it.*
-
 ## Authors
 
 The Flocon library is developped by Pierre Vuillemin (pierre.vuillemin@onera.fr) and Charles Poussot-Vassal (charles.poussot-vassal@onera.fr) within an internal ONERA project.

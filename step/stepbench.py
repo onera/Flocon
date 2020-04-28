@@ -36,8 +36,6 @@ xmax            =  12.0
 xmin            = -2.0
 
 
-# TODO :
-#  - check for longer experiment or comensurable ones for baseflow data
 class Step(TimeDomainSimulator):
     def __init__(self):
         self.DATABASE_FILE = os.path.join(CLASS_DIR,'STEP.db')
@@ -78,7 +76,7 @@ class Step(TimeDomainSimulator):
         str = f.read()
         id  = str.find('SOLVER FOUND')
         if id:
-            self.solver='mumps'
+            self.solver = 'mumps'
         else:
             self.print_msg('FreeFem "MUMPS" solver not found, switching to default.')
             self.solver='default'
