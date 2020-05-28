@@ -384,7 +384,7 @@ class Step(TimeDomainSimulator):
         if with_control:
             nin = self.nw
         else:
-            nin = self.nw + self.ny
+            nin = self.nw + self.nu
         input_signals = '\n'.join(['// Input signals matrix',\
                                    'real[int,int] inputSignals(%d, %d);'%(self.N, nin),\
                                    '{',\

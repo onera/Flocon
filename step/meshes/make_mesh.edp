@@ -1,0 +1,16 @@
+border a(t=1,0){x=-2 ;   y=t ;  label=1 ;} ;
+border b(t=-2,0){x=t;y=0;label=2;};
+border c(t=0,-1){x=0;y=t;label=2;};
+border d(t=0,12){x=t;y=-1;label = 2;};
+border e(t=-1,1){x=12;y=t;label=3;};
+border f(t=12,-2){x=t;y=1;label=2;};
+
+//  Show the borders of the mesh
+// plot(a(6) + b(4) + c(4) +d(4) + e(4) + f(6),wait=1) ;
+mesh Th2 = buildmesh(a(6) + b(6) + c(6) +d(6) + e(6) + f(6)) ;
+// Refine the mesh
+mesh Th3 = trunc(Th2, 1, split=10);
+// Show the mesh 
+plot(Th3, wait=true);
+// Save 
+savemesh(Th3, "test.msh");
