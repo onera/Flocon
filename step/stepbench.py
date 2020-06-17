@@ -378,15 +378,18 @@ class Step(TimeDomainSimulator):
         data['out'] = np.reshape(tmp[4],[self.N, 1 + self.nz + self.ny],order='C')
         return data
 
-    def get_io_placeholders(self, with_control=False):
+    def get_io_placeholders(self, with_control=False, with_ref=False):
         ph = {'DECLARATIONS':'','INITIALISATION':'','INPUTS':'','OUTPUTS':''}
         # Reading input signal
         if with_control:
             nin = self.nw
         else:
             nin = self.nw + self.nu
+        nrin = 0
+        if with_ref:
+            nrin = 1
         input_signals = '\n'.join(['// Input signals matrix',\
-                                   'real[int,int] inputSignals(%d, %d);'%(self.N, nin),\
+                                   'real[int,int] inputSignals(%d, %d);'%(self.N, nin + nrin),\
                                    '{',\
                                    'ifstream file("%s");'%(SIMIN),\
                                    'file >> inputSignals;',\
@@ -410,9 +413,14 @@ class Step(TimeDomainSimulator):
         # Saving outputs
         o_names     = z_names + y_names
         if with_control:
-            OA.append('// Update controller input')
-            for i,y in enumerate(y_names):
-                OA.append('uk(%d) = %s;'%(i, y))
+            if with_ref:
+                OA.append('// Update controller input')
+                for i,y in enumerate(y_names):
+                    OA.append('uk(%d) = inputSignals(i,%d) - %s;'%(i,nin, y))
+            else:
+                OA.append('// Update controller input')
+                for i,y in enumerate(y_names):
+                    OA.append('uk(%d) = %s;'%(i, y))
         SEP         = '"   "'
         save_outputs = '\n'.join(['{',\
                                  'ofstream f("@SIMOUT",append);',\
@@ -454,7 +462,7 @@ class Step(TimeDomainSimulator):
     # --------------------------------------------------------------------------
     # ClOSED LOOP
     # --------------------------------------------------------------------------
-    def simulate_closedloop(self, name, K, force=False, seed = []):
+    def simulate_closedloop(self, name, K, ref=None, force=False, seed = []):
         # Check whether this simulation already exists based on its name
         data = self.get_closedloop_simulation(name)
         if not force and data:
@@ -470,11 +478,20 @@ class Step(TimeDomainSimulator):
         if err_msg:
             self.print_msg(err_msg)
             return
+        if ref is not None:
+            with_ref = True
+        else:
+            with_ref = False
+        #
         self.clean_temp_files()
         # Noise input signal
         w               = self.get_noise_signals(seed=seed)
+        if with_ref:
+            input_signals = np.hstack([w,ref])
+        else:
+            input_signals = w
         # Store the input signal into the file SIMIN
-        sim.np_to_freefem_file(SIMIN, w)
+        sim.np_to_freefem_file(SIMIN, input_signals)
         # Store the control law matrices to associated files
         sim.np_to_freefem_file(KFILE, K_to_ABCD(K))
         # At this point, the simulation can be launched
@@ -482,16 +499,17 @@ class Step(TimeDomainSimulator):
         sim.write_file(BASEFLOW_DATA, bf_data)
         # Assemble EDP file for open-loop simulation
         self.print_msg('Creating closed-loop EDP file...')
-        self.make_closedloop_edp_file(K['A'].shape[0])
+        self.make_closedloop_edp_file(K['A'].shape[0],with_ref=with_ref)
         # Launching Simulation
+        self.print_msg('Running closed-loop...')
         sim.launch_edp_file(CLOSEDLOOP_EDP, log=LOG_FILE)
         # Simulation is done, reading and storing
         output_signals = sim.freefem_data_file_to_np(SIMOUT)
-        self.store_closedloop_data(name, K, w, output_signals)
+        self.store_closedloop_data(name, K, input_signals, output_signals)
         # return output_signals
         return output_signals
 
-    def make_closedloop_edp_file(self, nk):
+    def make_closedloop_edp_file(self, nk, with_ref = []):
         # Read associated EDP template
         closedloop_temp     = sim.read_template(TEMPLATE_OPENLOOP)
         #
@@ -502,7 +520,7 @@ class Step(TimeDomainSimulator):
         content             = content + sim.assign_freefem_var('NL', self.NL)
         content             = content + '\n// End of parameters declaration \n' + closedloop_temp
         # Inputs outputs
-        ph                  = self.get_io_placeholders(with_control=True)
+        ph                  = self.get_io_placeholders(with_control=True,with_ref=with_ref)
         # Control law matrices
         load_K = ['// Control-law realisation and signals',\
                   'real[int,int] ABCD(%d,%d);'%(nk + self.nu, nk + self.ny),\
@@ -560,10 +578,13 @@ class Step(TimeDomainSimulator):
             return []
         # Otherwise collect and return the data
         data        = {'in':[],'out':[], 'K':[]}
-        data['in']  = np.reshape(tmp[3],[self.N, self.nw],order='C')
+        # Input signals
+        ncols       = int(len(tmp[3])/self.N)
+        data['in']  = np.reshape(tmp[3],[self.N, ncols],order='C')
         data['out'] = np.reshape(tmp[4],[self.N, 1 + self.nz + self.ny],order='C')
         data['K']   = db_K_to_ABCD(tmp[5], self.nu, self.ny)
         return data
+
     def check_K(self, K):
         nyk = K['C'].shape[0]
         nuk = K['B'].shape[1]
