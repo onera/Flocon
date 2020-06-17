@@ -99,7 +99,7 @@ y       = out[:,2]                          # and the measurement outputs
 plt.plot(t, z, t, y)
 plt.show()
 ```
-If you attempt to make a simulation which name already exists in the database, the simulation outputs are returned. To get both input and output data, use `step.get_openloop_simulation(name)`.
+If you attempt to make a simulation which name already exists in the database, the simulation outputs are returned. To get both input (noise included) and output data, use `step.get_openloop_simulation(name)`.
 
 *Remark: For an experiment to be reproducible, you can fix the seed of the random noise generator by providing it `step.simulate_openloop('OL',u, seed=<user_seed>)`.*
 
@@ -118,6 +118,7 @@ plt.plot(t, zcl, t, ycl)
 plt.show()
 ```
 
+By default, the control-law is placed in a positive feedback. To add a reference and feed the control-law with a tracking error, it must be provided when launching the simulation as `out = step.simulate_closedloop('CL', K, ref = r)` where `r` is a numpy array containing the reference.
 
 
 ## Modifying the configuration

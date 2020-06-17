@@ -378,18 +378,15 @@ class Step(TimeDomainSimulator):
         data['out'] = np.reshape(tmp[4],[self.N, 1 + self.nz + self.ny],order='C')
         return data
 
-    def get_io_placeholders(self, with_control=False, with_ref=False):
+    def get_io_placeholders(self, with_control=False, nref=0):
         ph = {'DECLARATIONS':'','INITIALISATION':'','INPUTS':'','OUTPUTS':''}
         # Reading input signal
         if with_control:
             nin = self.nw
         else:
             nin = self.nw + self.nu
-        nrin = 0
-        if with_ref:
-            nrin = 1
         input_signals = '\n'.join(['// Input signals matrix',\
-                                   'real[int,int] inputSignals(%d, %d);'%(self.N, nin + nrin),\
+                                   'real[int,int] inputSignals(%d, %d);'%(self.N, nin + nref),\
                                    '{',\
                                    'ifstream file("%s");'%(SIMIN),\
                                    'file >> inputSignals;',\
@@ -413,10 +410,14 @@ class Step(TimeDomainSimulator):
         # Saving outputs
         o_names     = z_names + y_names
         if with_control:
-            if with_ref:
+            if nref>0:
                 OA.append('// Update controller input')
                 for i,y in enumerate(y_names):
-                    OA.append('uk(%d) = inputSignals(i,%d) - %s;'%(i,nin, y))
+                    if i < nref:
+                        OA.append('uk(%d) = inputSignals(i,%d) - %s;'%(i,nin, y))
+                    else:
+                        OA.append('uk(%d) = - %s;'%(i,nin, y))
+
             else:
                 OA.append('// Update controller input')
                 for i,y in enumerate(y_names):
@@ -478,15 +479,15 @@ class Step(TimeDomainSimulator):
         if err_msg:
             self.print_msg(err_msg)
             return
+        # reference
+        nref = 0
         if ref is not None:
-            with_ref = True
-        else:
-            with_ref = False
+            nref = ref.shape[1]
         #
         self.clean_temp_files()
         # Noise input signal
         w               = self.get_noise_signals(seed=seed)
-        if with_ref:
+        if nref>0:
             input_signals = np.hstack([w,ref])
         else:
             input_signals = w
@@ -499,7 +500,7 @@ class Step(TimeDomainSimulator):
         sim.write_file(BASEFLOW_DATA, bf_data)
         # Assemble EDP file for open-loop simulation
         self.print_msg('Creating closed-loop EDP file...')
-        self.make_closedloop_edp_file(K['A'].shape[0],with_ref=with_ref)
+        self.make_closedloop_edp_file(K['A'].shape[0],nref = nref)
         # Launching Simulation
         self.print_msg('Running closed-loop...')
         sim.launch_edp_file(CLOSEDLOOP_EDP, log=LOG_FILE)
@@ -509,7 +510,7 @@ class Step(TimeDomainSimulator):
         # return output_signals
         return output_signals
 
-    def make_closedloop_edp_file(self, nk, with_ref = []):
+    def make_closedloop_edp_file(self, nk, nref=0):
         # Read associated EDP template
         closedloop_temp     = sim.read_template(TEMPLATE_OPENLOOP)
         #
@@ -520,7 +521,7 @@ class Step(TimeDomainSimulator):
         content             = content + sim.assign_freefem_var('NL', self.NL)
         content             = content + '\n// End of parameters declaration \n' + closedloop_temp
         # Inputs outputs
-        ph                  = self.get_io_placeholders(with_control=True,with_ref=with_ref)
+        ph                  = self.get_io_placeholders(with_control=True, nref=nref)
         # Control law matrices
         load_K = ['// Control-law realisation and signals',\
                   'real[int,int] ABCD(%d,%d);'%(nk + self.nu, nk + self.ny),\
