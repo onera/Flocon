@@ -120,6 +120,7 @@ plt.show()
 
 By default, the control-law is placed in a positive feedback. To add a reference and feed the control-law with a tracking error, it must be provided when launching the simulation as `out = step.simulate_closedloop('CL', K, ref = r)` where `r` is a numpy array containing the reference.
 
+As with the open-loop simulation, the input/output signals and the control-law data can be recovered as a dictionary with `data = step.get_closedloop_simulation(<name>)`. If a reference was added, then it appears in the last column of the field `in`.
 
 ## Modifying the configuration
 
@@ -128,4 +129,4 @@ In order to perform some actuator or sensor placement studies, it is possible to
 
 ## Acknowledgement  
 
-Special thanks to Denis Sipp and Colin Leclercq for their precious help for the integration of this use-case.
+Special thanks to Denis Sipp and Colin Leclercq for their help with the integration of this use-case.
