@@ -93,8 +93,9 @@ By default, perturbations are handled within Flocon so that the user need only t
 u       = np.zeros([step.N,1])              # control signal
 out     = step.simulate_openloop('OL', u)   # name of the simulation and command
 t       = out[:,0]                          # time is the first output
-z       = out[:,1]                          # then comes the performances outputs
-y       = out[:,2]                          # and the measurement outputs
+energy  = out[:,1]                          # then comes the flow energy, which is of interest
+z       = out[:,2]                          # then comes the performances outputs
+y       = out[:,3]                          # and the measurement outputs
 # plotting the signals
 plt.plot(t, z, t, y)
 plt.show()
@@ -111,8 +112,9 @@ Assuming that you have a controller `K` (a dictionary) described by a *discrete*
 # K is a dictionary with fields A, B, C, D
 out     = step.simulate_closedloop('CL', K) # name of the simulation and control law
 t       = out[:,0]                          # time is the first output
-zcl     = out[:,1]                          # then comes the performances outputs
-ycl     = out[:,2]                          # and the measurement outputs
+energy  = out[:,1]                          # then comes the flow energy, which is of interest
+zcl     = out[:,2]                          # then comes the performances outputs
+ycl     = out[:,3]                          # and the measurement outputs
 # plotting the signals
 plt.plot(t, zcl, t, ycl)
 plt.show()

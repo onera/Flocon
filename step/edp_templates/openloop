@@ -32,6 +32,7 @@ matrix MatMass = Mass(Uvvp, Uvvp, solver=CG);
 
 // INITIALISATION ..............................................................
 real simtime  = 0; // current time
+real energy   = 0; // energy
 int i         = 0;
 u[]           = 0; // current flowfield
 // coefficients for first-order in time integration
@@ -66,6 +67,7 @@ varf rhs([u1,v1,p1],[u2,v2,p2])
 @INITIALISATION
 
 // OUTPUTS AT T=0
+energy = u[]'*rhs1[];
 @OUTPUTS
 
 // INTEGRATION LOOP ............................................................
@@ -98,10 +100,10 @@ for (i=0; i<N; i++)
   // INPUTS ....................................................................
   @INPUTS
   //
-	u[]    = A^-1*rhs1[];  // Flowfield update
+	u[]      = A^-1*rhs1[];  // Flowfield update
 	simtime += dt;           // Time update
-	rhs1[] = MatMass*u[];
-	//real nrj=u[]'*rhs1[];	// compute perturbation energy
+	rhs1[]   = MatMass*u[];
+	energy   = u[]'*rhs1[];	 // compute perturbation energy
   // OUTPUTS ...................................................................
   @OUTPUTS
 

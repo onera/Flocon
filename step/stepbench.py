@@ -375,7 +375,7 @@ class Step(TimeDomainSimulator):
         # Otherwise, return the data
         data        = {'in':[],'out':[]}
         data['in']  = np.reshape(tmp[3],[self.N, self.nw + self.nu],order='C')
-        data['out'] = np.reshape(tmp[4],[self.N, 1 + self.nz + self.ny],order='C')
+        data['out'] = np.reshape(tmp[4],[self.N, 2 + self.nz + self.ny],order='C')
         return data
 
     def get_io_placeholders(self, with_control=False, nref=0):
@@ -426,7 +426,7 @@ class Step(TimeDomainSimulator):
         save_outputs = '\n'.join(['{',\
                                  'ofstream f("@SIMOUT",append);',\
                                  'f.precision(16);',\
-                                 'f << simtime<<%s<<'%(SEP),\
+                                 'f << simtime<< %s<< energy << %s<<'%(SEP,SEP),\
                                  ('<<%s<<'%(SEP)).join(o_names),\
                                  '<< endl;',\
                                  '};'])
@@ -582,7 +582,7 @@ class Step(TimeDomainSimulator):
         # Input signals
         ncols       = int(len(tmp[3])/self.N)
         data['in']  = np.reshape(tmp[3],[self.N, ncols],order='C')
-        data['out'] = np.reshape(tmp[4],[self.N, 1 + self.nz + self.ny],order='C')
+        data['out'] = np.reshape(tmp[4],[self.N, 2 + self.nz + self.ny],order='C')
         data['K']   = db_K_to_ABCD(tmp[5], self.nu, self.ny)
         return data
 
