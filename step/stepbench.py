@@ -602,12 +602,13 @@ class Step(TimeDomainSimulator):
         # Numerical setup
         txt = '\n'.join((\
         'Re : %.2f' %(self.Re, ),\
+        'mesh : %s' %(self.mesh, ),\
         'dt  : %.3f' %(self.dt, ),\
         'N   : %d' %(self.N,),\
         'tf   : %.2f' %(self.tf,)\
         ))
         props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-        ax.text(3, 5, txt, fontsize=14,
+        ax.text(3, 6, txt, fontsize=14,
                 verticalalignment='top', bbox=props)
         # The box
         plt.plot(np.array([xmin, xmin, xmax, xmax, xmin]),\

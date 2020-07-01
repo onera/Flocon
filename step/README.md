@@ -55,22 +55,22 @@ This creates a (sqlite) database in which simulations results are stored.
 Simulations are performed around an equilibrium called base-flow which  must be computed as follows:
 
 ```python
-# step.Re   = 100
-# step.mesh ='coarse' # other possibility is 'fine'
 # Base-flow computation
+step.Re   = 100     # change Reynolds number
+step.mesh = 'test'  # change active mesh  
 step.compute_baseflow()
 ```
 The results is directly stored in the database. The base-flow depends both on the Reynolds number and on the mesh. Changing one of those parameters requires to computer another base-flow.
-
 
 *About convergence of the base-flow:* Note that the computation of the base-flow is done with a Newton iteration which may not converge, especially for large Reynolds number. To alleviate this issue, an automated procedure has been implemented: attempt to solve for the current Reynolds number by restarting from the closest existing solution (stored in DB). If it converges, store the solution. Otherwise, decrease the Reynolds number and repeat.
 
 However, this trial and error scheme may take a while and you can also manually increase the Reynolds number.
 
+*About the meshes:* Three increasingly refined mesh can be considered: `'test'`, `'coarse'` and `'fine'`. The test mesh is inaccurate and should be used, as its name suggests, only to play around with the benchmark. For instance, it may help understand what the various routines are expecting and returning. Indeed, the other two meshes are way more refined and induce a significant computational burden for simulation.
+
 ### Open-loop simulation
 
 Once the base-flow has been computed, open-loop simulations can be performed. Those, in addition to the Reynolds number and mesh, depends on several additional parameters listed below.
-
 
 |   Name              | Description                                            |  Default value |
 |--------------------:|:-------------------------------------------------------|:--------------:|
