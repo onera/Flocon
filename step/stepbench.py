@@ -479,6 +479,12 @@ class Step(TimeDomainSimulator):
         if err_msg:
             self.print_msg(err_msg)
             return
+        # Sampling time for K: default is 1
+        if 'ntk' not in K:
+            K['ntk'] = 1
+        if K['ntk']<1:
+            self.print_msg('Sampling time of control-law must be >= simulation step.')
+            return
         # reference
         nref = 0
         if ref is not None:
@@ -500,7 +506,7 @@ class Step(TimeDomainSimulator):
         sim.write_file(BASEFLOW_DATA, bf_data)
         # Assemble EDP file for open-loop simulation
         self.print_msg('Creating closed-loop EDP file...')
-        self.make_closedloop_edp_file(K['A'].shape[0],nref = nref)
+        self.make_closedloop_edp_file(K['A'].shape[0], nref = nref, ntk = K['ntk'])
         # Launching Simulation
         self.print_msg('Running closed-loop...')
         sim.launch_edp_file(CLOSEDLOOP_EDP, log=LOG_FILE)
@@ -510,7 +516,7 @@ class Step(TimeDomainSimulator):
         # return output_signals
         return output_signals
 
-    def make_closedloop_edp_file(self, nk, nref=0):
+    def make_closedloop_edp_file(self, nk, nref=0, ntk = 1):
         # Read associated EDP template
         closedloop_temp     = sim.read_template(TEMPLATE_OPENLOOP)
         #
@@ -550,8 +556,11 @@ class Step(TimeDomainSimulator):
                                              'yk += Dk*uk;']) +'\n' + ph['INPUTS']
         # Update controller state
         xk_update = '\n'.join(['//Controller state update',\
+                              'if (i%%d == 0)'%(ntk),\
+                              '{',\
                               'xkp1 = Ak*xk;',\
-                              'xkp1 += Bk*uk;'])
+                              'xkp1 += Bk*uk;'],\
+                              '}')
         ph['OUTPUTS']           = ph['OUTPUTS'] + xk_update
         #
         #
