@@ -5,6 +5,16 @@ import numpy as np
 import subprocess
 import os
 
+
+CLASS_DIR           = os.path.dirname(__file__)
+WORKING_DIR         = os.path.join(CLASS_DIR, 'work')
+# Create working temp directory if it does not exists
+if not os.path.exists(WORKING_DIR):
+    os.mkdir(WORKING_DIR)
+#
+TMP_EDP_FILE        = os.path.join(WORKING_DIR,'tmp.edp')
+LOG_FILE            = os.path.join(WORKING_DIR,'log')
+
 def adapt_array(arr):
     return arr.tobytes()
 
@@ -13,6 +23,7 @@ def convert_array(text):
 
 sqlite3.register_adapter(np.ndarray, adapt_array)
 sqlite3.register_converter("array", convert_array)
+
 
 class Simulator:
     def __init__(self):
@@ -54,8 +65,32 @@ class Simulator:
         self.db.commit()
 
 class TimeDomainSimulator(Simulator):
-    pass
+    def __init__(self):
+        pass
 
+    def test_freefem_solver(self):
+        content = '\n'.join(['try',\
+                             '{',\
+                             'load "MUMPS_seq"',\
+                             '// defaulttoMUMPSseq();',\
+                             'cout << "SOLVER FOUND" << endl;',\
+                             '}',\
+                             'catch(...){',\
+                             'cout << "SOLVER NOT FOUND" << endl;',\
+                             '}',\
+                             ])
+        #
+        write_file(TMP_EDP_FILE, content)
+        launch_edp_file(TMP_EDP_FILE, log=LOG_FILE, opt='ne')
+        f   = open(LOG_FILE, 'r')
+        str = f.read()
+        id  = str.find('SOLVER FOUND')
+        if id>=0:
+            self.solver = 'mumps'
+        else:
+            self.print_msg('FreeFem "MUMPS" solver not found, switching to default.')
+            self.solver='default'
+        f.close()
 # ------------------------------------------------------------------------------
 # External file
 # ------------------------------------------------------------------------------
@@ -107,6 +142,13 @@ def assign_freefem_var(name, val):
         typ = 'int'
     elif type(val) == float:
         typ = 'real'
+    elif type(val) == complex:
+        typ = 'complex'
+        if np.imag(val) >=0:
+            sign = '+'
+        else:
+            sign = '-'
+        return '{} {} = {} {} {}i;\n'.format(typ, name, np.real(val), sign, abs(np.imag(val)) )
     else:
         return ''
     return '{} {} = {};\n'.format(typ, name, val)

@@ -1,0 +1,6 @@
+                include "data.txt" // configuration, definition of constants, radius=..., position
+
+				mesh th = square(round((xmax-xmin)/deltax),1,[xmin+(xmax-xmin)*x,y*deltax]);
+				plot(th,wait=1);
+
+                savemesh(th,"mesh.msh"); // same mesh

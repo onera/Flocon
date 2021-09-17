@@ -58,35 +58,35 @@ class Step(TimeDomainSimulator):
         if out is None:
             raise Exception("FreeFem++ not found. Make sure it is installed.")
         # Trying to determine whether the MUMPS solver is available in FreeFem++ install
-        self.test_freefem_solver()
+        sim.test_freefem_solver()
 
-    def test_freefem_solver(self):
-        content = '\n'.join(['try',\
-                             '{',\
-                             'load "MUMPS_seq"',\
-                             'defaulttoMUMPSseq();',\
-                             'cout << "SOLVER FOUND" << endl;',\
-                             '}',\
-                             'catch(...){',\
-                             'cout << "SOLVER NOT FOUND" << endl;',\
-                             '}',\
-                             ])
-        #
-        sim.write_file(TMP_FILE, content)
-        sim.launch_edp_file(TMP_FILE, log=LOG_FILE, opt='ne')
-        f   = open(LOG_FILE, 'r')
-        str = f.read()
-        id  = str.find('SOLVER FOUND')
-        if id>=0:
-            self.solver = 'mumps'
-        else:
-            self.print_msg('FreeFem "MUMPS" solver not found, switching to default.')
-            self.solver='default'
-        f.close()
+    # def test_freefem_solver(self):
+    #     content = '\n'.join(['try',\
+    #                          '{',\
+    #                          'load "MUMPS_seq"',\
+    #                          '// defaulttoMUMPSseq();',\   # Not working anymore
+    #                          'cout << "SOLVER FOUND" << endl;',\
+    #                          '}',\
+    #                          'catch(...){',\
+    #                          'cout << "SOLVER NOT FOUND" << endl;',\
+    #                          '}',\
+    #                          ])
+    #     #
+    #     sim.write_file(TMP_FILE, content)
+    #     sim.launch_edp_file(TMP_FILE, log=LOG_FILE, opt='ne')
+    #     f   = open(LOG_FILE, 'r')
+    #     str = f.read()
+    #     id  = str.find('SOLVER FOUND')
+    #     if id>=0:
+    #         self.solver = 'mumps'
+    #     else:
+    #         self.print_msg('FreeFem "MUMPS" solver not found, switching to default.')
+    #         self.solver='default'
+    #     f.close()
 
     def init_default_parameters(self):
         self.name       = 'default'
-        # Physical parameters ans setting
+        # Physical parameters and setting
         self.Re         = 100.0
         # Control input(s)
         self.actuators  = []
@@ -280,7 +280,8 @@ class Step(TimeDomainSimulator):
               'KFILE':KFILE,
               'SOLVER':''}
         if self.solver == 'mumps':
-            ph['SOLVER'] = 'load "MUMPS_seq"\ndefaulttoMUMPSseq();'
+            # ph['SOLVER'] = 'load "MUMPS_seq"\ndefaulttoMUMPSseq();'
+            ph['SOLVER'] = 'load "MUMPS_seq"'
         return ph
 
     def make_baseflow_edp_file(self, is_restart = False):
