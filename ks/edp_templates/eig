@@ -8,7 +8,7 @@ WV [repw,repv]=[(abs(y)<deltax/10.),(abs(y)<deltax/10.)];
 W repww = (abs(y)<deltax/10.);
 
 // Linearized Navier-Stokes operator with time-stepping
-varf LKS([w,v],[w1,v1])=int1d(th,1)(-U*dx(w)*w1-mu0*exp(-x^2/d^2)*v*w1+gamma*dx(v)*dx(w1)-s*w*w1+dx(w)*dx(v1)+v*v1)+on(4,w=0,v=0);
+varf LKS([w,v],[w1,v1])=int1d(th,1)(-ub*dx(w)*w1 - mu0*exp(-x^2/d^2)*v*w1 + gamma*dx(v)*dx(w1) - s*w*w1+dx(w)*dx(v1) + v*v1) + on(4,w=0,v=0);
 
 matrix<complex> MatLKS=LKS(WV,WV,solver=GMRES);
 {
@@ -30,7 +30,6 @@ varf Mass([w,v],[w1,v1])=int1d(th,1)(w*w1);
 matrix<complex> MatMass=Mass(WV,WV,solver=CG);
 
 // Quantities needed for eigenvalue solver
-int nev=2;
 complex[int] ev(nev);           // to store nev eigenvalues
 WV<complex>[int] [w,v](nev);    // to store nev eigenvectors
 int k;                          // number of converged eigenvalues
@@ -41,20 +40,20 @@ k=EigenValue(MatLKS,MatMass,sigma=s,value=ev,vector=w,tol=0.,maxit=90000,ncv=100
 k=min(k,nev);
 
 // file to store eigenvalues
-ofstream file("vp.txt");
+ofstream file("@EIG_FILE");
 file.precision(16);
 
 // Loop on converged eigenvalues
 W xx=x;
 for (int kk=0;kk<k;kk++)
 {
-// Save kkth eigenvalue
-file << real(ev[kk]) << " " << imag(ev[kk]) << " " << kk << endl;
-// Save kkth eigenvector
-WV<complex> [ww,vv];
-ww[]=w[kk][];
-{
-ofstream fifi("ev_"+kk+".txt");
-fifi << ww[] << endl;
-}
+    // Save kkth eigenvalue
+    file << real(ev[kk]) << " " << imag(ev[kk]) <<  endl;
+    // Save kkth eigenvector
+    WV<complex> [ww,vv];
+    ww[]=w[kk][];
+    {
+      ofstream fifi("@EV_FILE"+kk);
+      fifi << ww[] << endl;
+    }
 }

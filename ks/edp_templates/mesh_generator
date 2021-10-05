@@ -1,0 +1,3 @@
+mesh th = square(round((xmax-xmin)/deltax),1,[xmin+(xmax-xmin)*x,y*deltax]);
+
+savemesh(th,"@MESH");

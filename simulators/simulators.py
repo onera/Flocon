@@ -4,7 +4,7 @@ import io
 import numpy as np
 import subprocess
 import os
-
+import re
 
 CLASS_DIR           = os.path.dirname(__file__)
 WORKING_DIR         = os.path.join(CLASS_DIR, 'work')
@@ -23,6 +23,8 @@ def convert_array(text):
 
 sqlite3.register_adapter(np.ndarray, adapt_array)
 sqlite3.register_converter("array", convert_array)
+
+pair = re.compile(r'\((.*?),(.*?)\)')
 
 
 class Simulator:
@@ -128,10 +130,38 @@ def ABCD_to_freefem_file(target, ABCD):
     np_to_freefem_file(target,ABCD)
 
 def np_to_freefem_file(target, m):
-    np.savetxt(target,m, delimiter=' ', fmt='%.16f', header='%d %d'%(m.shape[0], m.shape[1]),comments='')
+    if len(m.shape) == 2:
+        np.savetxt(target,m, delimiter=' ', fmt='%.16f', header='%d %d'%(m.shape[0], m.shape[1]),comments='')
+    elif len(m.shape) ==1:
+        np.savetxt(target,m, delimiter=' ', fmt='%.16f', header='%d'%(m.shape[0]),comments='')
 
-def freefem_data_file_to_np(file):
-    return np.loadtxt(file,skiprows=1)
+def freefem_data_file_to_np(file, skiprows=1):
+    return np.loadtxt(file,skiprows=skiprows)
+
+def freefem_cvec_to_np(file):
+    with open(file) as f:
+        lines   = f.readlines()
+        v       = np.zeros(int(lines[0]),dtype=np.complex)
+        i       = 0
+        for l in lines:
+            for m in re.finditer(pair, l):
+                rp      = float(m.group(1))
+                ip      = float(m.group(2))
+                v[i]    = complex(rp, ip)
+                i       = i + 1
+    return v
+
+def freefem_rvec_to_np(file):
+    blanks = re.compile(r'[^\s]+')
+    with open(file) as f:
+        lines   = f.readlines()
+        v       = np.zeros(int(lines[0]))
+        i       = 0
+        for l in lines[1:]:
+            for m in re.finditer(blanks, l):
+                v[i]    = float(m[0])
+                i       = i + 1
+    return v
 
 def assign_freefem_var(name, val):
     if type(val) == bool:

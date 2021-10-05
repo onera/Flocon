@@ -169,7 +169,7 @@ class Step(TimeDomainSimulator):
         return out
 
     def print_msg(self, msg):
-        print('[FLOCON]['+self.reduced_id + '] '+ msg)
+        print('[FLOCON][STEP]['+self.reduced_id + '] '+ msg)
     # --------------------------------------------------------------------------
     # BASE FLOW
     # --------------------------------------------------------------------------
