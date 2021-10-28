@@ -149,8 +149,8 @@ class Ks(TimeDomainSimulator):
         sim.launch_edp_file(EIG_EDP, log=LOG_FILE)
         # Read eigenvalues and eigenvectors
         eigs_ri = sim.freefem_data_file_to_np(EIG_FILE, 0)
-        evs = []
-        eigs = np.zeros((nev,1), dtype=np.complex)
+        evs     = []
+        eigs    = np.zeros((nev,1), dtype=np.complex)
         for i in range(nev):
             eigs[i] = complex(eigs_ri[i][0], eigs_ri[i][1])
             tmp     = sim.freefem_cvec_to_np('%s%d'%(EV_FILE,i))
@@ -159,14 +159,14 @@ class Ks(TimeDomainSimulator):
 
     def make_eig_edp_file(self, nev=2):
         # Read associated EDP template
-        eig_temp   = sim.read_template(TEMPLATE_EIG)
+        eig_temp    = sim.read_template(TEMPLATE_EIG)
         # Physical setting declaration + initial eigenvalue
-        content = self.get_physical_setting_decl()
-        content = content + sim.assign_freefem_var('nev', nev) + '\n'
+        content     = self.get_physical_setting_decl()
+        content     = content + sim.assign_freefem_var('nev', nev) + '\n'
         # Template
-        content = content + eig_temp
+        content     = content + eig_temp
         # Replace place holders
-        content = sim.replace_placeholders(self.get_placeholders(), content)
+        content     = sim.replace_placeholders(self.get_placeholders(), content)
         #
         sim.write_file(EIG_EDP, content)
         return content
