@@ -16,15 +16,22 @@ MESH_FILE           = os.path.join(MESH_DIR, 'mesh.msh')
 TEMPLATE_DIR        = os.path.join(CLASS_DIR, 'edp_templates')
 TEMPLATE_EIG        = os.path.join(TEMPLATE_DIR, 'eig')
 TEMPLATE_MESH       = os.path.join(TEMPLATE_DIR, 'mesh_generator')
-TEMPLATE_LINE       = os.path.join(TEMPLATE_DIR, 'get_line')
+TEMPLATE_STOREWY    = os.path.join(TEMPLATE_DIR, 'storewy')
+TEMPLATE_SIM        = os.path.join(TEMPLATE_DIR, 'sim')
+
 # edp files
 EIG_EDP             = os.path.join(WORKING_DIR, 'eig.edp')
 MESH_GENERATOR_EDP  = os.path.join(WORKING_DIR, 'mesh_generator.edp')
+STOREWY_EDP         = os.path.join(WORKING_DIR, 'storewy.edp')
+SIM_EDP             = os.path.join(WORKING_DIR, 'sim.edp')
+
 #
 EIG_FILE            = os.path.join(WORKING_DIR, 'eig')
 EV_FILE             = os.path.join(WORKING_DIR, 'ev')
 X0_FILE             = os.path.join(WORKING_DIR, 'x0')
-
+X_FILE              = os.path.join(WORKING_DIR, 'x')
+WY_FILE             = os.path.join(WORKING_DIR, 'wy')
+SIMOUT_FILE         = os.path.join(WORKING_DIR, 'simout')
 #
 LOG_FILE            = os.path.join(WORKING_DIR,'log')
 
@@ -60,10 +67,15 @@ class Ks(TimeDomainSimulator):
         self.deltax     = 0.05
         self.lambda0    = complex(0.1,0.58)
         # Simulation parameter
-        self.N          = 12500     # number of iterations
-        self.dt         = 0.02       # integration time step
         self.NL         = True       # activation of non-linear term
+        self.N          = 10000      # number of iterations
+        self.dt         = 0.04       # integration time step
+        # Output parameters
+        self.y          = [10.0, 10.0,1.0] # ymin, ymax, dy
 
+    @property
+    def ny(self):
+        return int(np.floor(self.y[1]-self.y[0]/self.y[2]) + 1)
     @property
     def tf(self):
         return self.N * self.dt
@@ -90,7 +102,11 @@ class Ks(TimeDomainSimulator):
     def get_placeholders(self):
         ph = {'MESH':MESH_FILE,
               'EIG_FILE': EIG_FILE,
-              'EV_FILE':EV_FILE,
+              'EV_FILE': EV_FILE,
+              'WY_FILE': WY_FILE,
+              'X0_FILE': X0_FILE,
+              'X_FILE': X_FILE,
+              'SIMOUT_FILE':SIMOUT_FILE,
               'SOLVER':''}
         if self.solver == 'mumps':
             # ph['SOLVER'] = 'load "MUMPS_seq"\ndefaulttoMUMPSseq();'
@@ -113,6 +129,21 @@ class Ks(TimeDomainSimulator):
         content = content + sim.assign_freefem_var('mu0', self.mu0) + '\n'
         content = content + sim.assign_freefem_var('s', self.lambda0)
         content = content + '\n// End of parameters declaration \n'
+        return content
+
+    def get_output_decl(self):
+        content ='// Output declaration \n'
+        content = content + sim.assign_freefem_var('minXout', self.y[0]) + '\n'
+        content = content + sim.assign_freefem_var('maxXout', self.y[1]) + '\n'
+        content = content + sim.assign_freefem_var('stepXout', self.y[2]) + '\n'
+        content = content + '\n// End of output declaration \n'
+        return content
+    def get_sim_decl(self):
+        content =  '// Simulation parameters \n'
+        content = content + sim.assign_freefem_var('NL', self.NL) + '\n'
+        content = content + sim.assign_freefem_var('dt', self.dt) + '\n'
+        content = content + sim.assign_freefem_var('N', self.N) + '\n'
+        content = content + '// End of Simulation parameters declaration \n'
         return content
     # --------------------------------------------------------------------------
     # GENERATING MESH
@@ -169,4 +200,50 @@ class Ks(TimeDomainSimulator):
         content     = sim.replace_placeholders(self.get_placeholders(), content)
         #
         sim.write_file(EIG_EDP, content)
+        return content
+    # --------------------------------------------------------------------------
+    # STORE ELEMENTS
+    # --------------------------------------------------------------------------
+    def get_y(self, x):
+        sim.np_to_freefem_file(X_FILE, x)
+        self.make_storewy_edp_file()
+        sim.launch_edp_file(STOREWY_EDP)
+        y = sim.freefem_rvec_to_np(WY_FILE)
+        return y
+
+    def make_storewy_edp_file(self):
+        w_temp  = sim.read_template(TEMPLATE_STOREWY)
+        content = self.get_output_decl()
+        # template
+        content = content + w_temp
+        #
+        content     = sim.replace_placeholders(self.get_placeholders(), content)
+        sim.write_file(STOREWY_EDP, content)
+        return content
+    # --------------------------------------------------------------------------
+    # SIMULATION
+    # --------------------------------------------------------------------------
+    def simulate(self, x):
+        self.make_simulation_edp_file()
+        sim.np_to_freefem_file(X0_FILE, x)
+        sim.launch_edp_file(SIM_EDP)
+        data = sim.freefem_rvec_to_np(SIMOUT_FILE)
+        #
+        n       = self.ny +1
+        t       = data[0::n+1]
+        energy  = data[1::n+1]
+        y = np.zeros((self.N+1, self.ny))
+        for i in range(self.ny):
+            y[:,i] = data[(2+i)::n+1]
+        return [t, energy, y]
+
+    def make_simulation_edp_file(self):
+        sim_temp    = sim.read_template(TEMPLATE_SIM)
+        content     = self.get_physical_setting_decl() + '\n' \
+                    + self.get_output_decl() + '\n' \
+                    + self.get_sim_decl() + '\n' \
+                    + sim_temp
+        content     = sim.replace_placeholders(self.get_placeholders(), content)
+        #
+        sim.write_file(SIM_EDP, content)
         return content

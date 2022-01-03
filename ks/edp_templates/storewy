@@ -1,0 +1,28 @@
+@SOLVER
+
+mesh th=readmesh("@MESH");
+
+fespace WV(th,[P2,P2]);
+WV [w,v];
+
+{
+  ifstream fi("@X_FILE");
+  fi >> w[];
+}
+
+real Xout   = minXout;
+int lenXout = 1 + floor((maxXout - minXout)/stepXout);
+
+{
+  ofstream file("@WY_FILE");
+  file << lenXout << endl;
+};
+
+while (Xout <= maxXout)
+{
+  {
+    ofstream file("@WY_FILE",append);
+    file << w(Xout, 0.) << endl;
+  };
+Xout += stepXout;
+};

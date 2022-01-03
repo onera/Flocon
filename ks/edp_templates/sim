@@ -1,0 +1,123 @@
+@SOLVER
+
+mesh th=readmesh("@MESH");
+fespace WV(th,[P2,P2]);
+fespace W(th,P2);
+WV [repw,repv]=[(abs(y)<deltax/10.),(abs(y)<deltax/10.)];
+
+// Start with first order time integration
+real a0,a1,a2,bet0,bet1;
+a0=1./dt; a1=-1./dt; a2=0; bet0=1.; bet1=0;
+
+// Linearized Navier-Stokes operator with time-stepping
+varf LKS([w,v],[w1,v1])=int1d(th,1)(a0*w*w1+ub*dx(w)*w1+mu0*exp(-x^2/d^2)*v*w1-gamma*dx(v)*dx(w1)+dx(w)*dx(v1)+v*v1)+on(4,w=0,v=0);
+matrix MatLKS=LKS(WV,WV,solver=GMRES);
+{
+    real[int] diagofMatLKS(MatLKS.n);
+    diagofMatLKS=MatLKS.diag;
+    for(int ii=0; ii<MatLKS.n; ii++)
+    {
+      if(repw[][ii]==0.)
+      {
+        diagofMatLKS(ii)=1.e30;
+      }
+    }
+    MatLKS.diag=diagofMatLKS;
+}
+set(MatLKS,solver=sparsesolver);
+// Mass-matrix or scalar-product
+varf Mass([w,v],[w1,v1])=int1d(th,1)(w*w1);
+matrix MatMass=Mass(WV,WV,solver=CG);
+
+WV [w,v],[wp,vp],[wpp,vpp],[nlwp,nlvp],[nlwpp,nlvpp],[rhsw,rhsv];
+
+// Non-linear term at the right-hand-side
+varf conv([ww,vv],[w1,v1])=int1d(th,1)(-w*dx(w)*w1);
+
+// Initial output + NRJ ========================================================
+// Read initial state
+{
+  ifstream xfile("@X0_FILE");
+  xfile >> w[];
+}
+real tps  = 0;
+real Xout = minXout;
+rhsw[]    = MatMass*w[];
+real nrjp = w[]'*rhsw[];
+int lenXout = 1 + floor((maxXout - minXout)/stepXout);
+// Write energy + output .......................................................
+{
+  ofstream file("@SIMOUT_FILE");
+  file << (N+1)*(lenXout + 2) << endl;
+  file << tps << endl;
+  file << nrjp << endl;
+};
+while (Xout <= maxXout)
+{
+  {
+    ofstream file("@SIMOUT_FILE",append);
+    file << w(Xout, 0.) << endl;
+  };
+Xout += stepXout;
+};
+
+// Time-iteration ==============================================================
+for (int i=1; i<=N; i++)
+{
+  wpp[]=wp[];
+  wp[]=MatMass*w[];
+  // Compute non-linear terms if needed
+  if(NL==1)
+  {
+    nlwpp[] = nlwp[];
+    nlwp[]  = conv(0,WV);
+  }
+  // After five iterations, switch to 2nd order time-scheme
+  if(i==5)
+  {
+    a0=1.5/dt; a1=-2./dt; a2=0.5/dt; bet0=2; bet1=-1;
+    MatLKS=LKS(WV,WV,solver=GMRES);
+    {
+      real[int] diagofMatLKS(MatLKS.n);
+      diagofMatLKS=MatLKS.diag;
+      for(int ii=0; ii<MatLKS.n; ii++)
+      {
+        if(repw[][ii]==0.)
+        {
+          diagofMatLKS(ii)=1.e30;
+        }
+      }
+      MatLKS.diag=diagofMatLKS;
+    }
+    set(MatLKS,solver=sparsesolver);
+  }
+  // Build right-hand-side
+  rhsw[]=-a1*wp[]-a2*wpp[];
+  // Take into account non-linear terms if needed
+  if(NL==1)
+  {
+    rhsw[]+=bet0*nlwp[]+bet1*nlwpp[];
+  }
+  // Invert linearized Navier-Stokes matrix
+  w[] = MatLKS^-1*rhsw[];
+  // Update time
+  tps+=dt;
+  // Perturbation energy
+  rhsw[]    = MatMass*w[];
+  nrjp      = w[]'*rhsw[];
+  // Write energy + output......................................................
+  {
+    ofstream file("@SIMOUT_FILE",append);
+    file << tps << endl;
+    file << nrjp << endl;
+  };
+  Xout = minXout;
+  while (Xout <= maxXout)
+  {
+    {
+      ofstream file("@SIMOUT_FILE",append);
+      file << w(Xout, 0.) << endl;
+    };
+  Xout += stepXout;
+  };
+}
