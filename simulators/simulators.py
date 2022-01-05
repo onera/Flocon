@@ -5,6 +5,7 @@ import numpy as np
 import subprocess
 import os
 import re
+import scipy.sparse as sparse
 
 CLASS_DIR           = os.path.dirname(__file__)
 WORKING_DIR         = os.path.join(CLASS_DIR, 'work')
@@ -162,6 +163,24 @@ def freefem_rvec_to_np(file):
                 v[i]    = float(m[0])
                 i       = i + 1
     return v
+
+def freefem_coo_to_np(file):
+    with open(file) as f:
+        lines   = f.readlines()
+        i       = []
+        j       = []
+        data    = []
+        out     = lines[2].split()
+        m       = int(out[0])
+        n       = int(out[1])
+        for line in lines[3:]:
+            out = line.split()
+            if out:
+                i.append(int(out[0]))
+                j.append(int(out[1]))
+                data.append(float(out[2]))
+        lc = sparse.coo_matrix((data,(i,j)),shape=(m,n))
+        return lc
 
 def assign_freefem_var(name, val):
     if type(val) == bool:
