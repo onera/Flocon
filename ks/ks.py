@@ -76,12 +76,13 @@ class Ks(TimeDomainSimulator):
         self.xmax       = 100.0
         self.deltax     = 0.05
         self.lambda0    = complex(0.1,0.58)
+        self.free_idx   = [] # free idx
         # Simulation parameter
         self.NL         = True       # activation of non-linear term
         self.N          = 10000      # number of iterations
         self.dt         = 0.04       # integration time step
         # Output parameters
-        self.y          = [-10.0, 10.0,10.0] # ymin, ymax, dy
+        self.y          = [-10.0, 10.0,0.5] # ymin, ymax, dy
 
     @property
     def ny(self):
@@ -169,6 +170,7 @@ class Ks(TimeDomainSimulator):
         sim.launch_edp_file(MESH_GENERATOR_EDP, log=LOG_FILE)
         if os.path.exists(MESH_FILE):
             self.print_msg('Mesh file successfully generated.')
+        self.get_free_idx()
 
     def mesh_generator_edp(self):
         generator_temp = sim.read_template(TEMPLATE_MESH)
@@ -224,8 +226,9 @@ class Ks(TimeDomainSimulator):
         sim.np_to_freefem_file(X_FILE, x)
         self.make_storewy_edp_file()
         sim.launch_edp_file(STOREWY_EDP)
-        y = sim.freefem_rvec_to_np(WY_FILE)
-        return y
+        y       = sim.freefem_rvec_to_np(WY_FILE)
+        loc_y   = np.linspace(self.y[0],self.y[1], y.size)
+        return [y, loc_y]
 
     def make_storewy_edp_file(self):
         w_temp  = sim.read_template(TEMPLATE_STOREWY)
@@ -243,7 +246,7 @@ class Ks(TimeDomainSimulator):
         self.make_simulation_edp_file()
         sim.np_to_freefem_file(X0_FILE, x)
         sim.launch_edp_file(SIM_EDP)
-        data = sim.freefem_rvec_to_np(SIMOUT_FILE)
+        data    = sim.freefem_rvec_to_np(SIMOUT_FILE)
         #
         n       = self.ny +1
         t       = data[0::n+1]
@@ -266,32 +269,38 @@ class Ks(TimeDomainSimulator):
     # --------------------------------------------------------------------------
     # MATRIX EXTRACTION
     # --------------------------------------------------------------------------
+    def get_free_idx(self):
+        self.make_export_edp_file(all_matrices = False)
+        sim.launch_edp_file(EXPORT_EDP)
+        self.free_idx = sim.freefem_rvec_to_np(VEC_BLOCKED) < 1
+
     def export_matrices(self,x):
         self.make_export_edp_file()
         sim.launch_edp_file(EXPORT_EDP)
-        free_idx    = sim.freefem_rvec_to_np(VEC_BLOCKED) < 1
+        free_idx    = self.free_idx#sim.freefem_rvec_to_np(VEC_BLOCKED) < 1
         A           = sim.freefem_coo_to_np(MAT_A).tocsc()
         Q           = sim.freefem_coo_to_np(MAT_Q).tocsc()
         M           = sim.freefem_coo_to_np(MAT_M).tocsc()
         DX          = sim.freefem_coo_to_np(MAT_DX).tocsc()
         C           = sparse.csc_matrix(sim.freefem_data_file_to_np(MAT_C))
         # Removing fixed elements
-        A   = A[:,free_idx]
-        A   = A[free_idx,:]
-        Q   = Q[:,free_idx]
-        Q   = Q[free_idx,:]
-        M   = M[:,free_idx]
-        M   = M[free_idx,:]
-        DX  = DX[:,free_idx]
-        DX  = DX[free_idx,:]
-        C   = C[:,free_idx]
-        xr  = x[free_idx]
+        A           = A[:,free_idx]
+        A           = A[free_idx,:]
+        Q           = Q[:,free_idx]
+        Q           = Q[free_idx,:]
+        M           = M[:,free_idx]
+        M           = M[free_idx,:]
+        DX          = DX[:,free_idx]
+        DX          = DX[free_idx,:]
+        C           = C[:,free_idx]
+        xr          = x[free_idx]
         return [A, Q, M, DX, C, xr]
 
-    def make_export_edp_file(self):
+    def make_export_edp_file(self, all_matrices = True):
         exp_temp    = sim.read_template(TEMPLATE_EXPORT)
         content     = self.get_physical_setting_decl() + '\n' \
                       + self.get_output_decl() + '\n' \
+                      + sim.assign_freefem_var('allMat', all_matrices) + '\n' \
                       + exp_temp
         content     = sim.replace_placeholders(self.get_placeholders(), content)
         sim.write_file(EXPORT_EDP, content)

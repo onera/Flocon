@@ -19,84 +19,85 @@ blockedU[] = blocked(0, WV, tgv=1);
       }
     }
 }
-// Linear dynamic matrix A
-varf LNS([w,v],[w1,v1])=int1d(th,1)(-ub*dx(w)*w1-mu0*exp(-x^2/d^2)*v*w1+gamma*dx(v)*dx(w1)+dx(w)*dx(v1)+v*v1);
-matrix MatLNS=LNS(WV,WV,solver=GMRES);
+if (allMat) {
+  // Linear dynamic matrix A
+  varf LNS([w,v],[w1,v1])=int1d(th,1)(-ub*dx(w)*w1-mu0*exp(-x^2/d^2)*v*w1+gamma*dx(v)*dx(w1)+dx(w)*dx(v1)+v*v1);
+  matrix MatLNS=LNS(WV,WV,solver=GMRES);
 
-// Matrix Dx in quadratic term
-varf derx([a,b],[v1,v2])= int1d(th,1)(-v1*dx(a));
-matrix MatDerx=derx(WV,WV,solver=GMRES);
+  // Matrix Dx in quadratic term
+  varf derx([a,b],[v1,v2])= int1d(th,1)(-v1*dx(a));
+  matrix MatDerx=derx(WV,WV,solver=GMRES);
 
-// Matrix Q, not invertible
-varf Mass([w,v],[w1,v1])=int1d(th,1)(w*w1);
-matrix MassMat=Mass(WV,WV,solver=GMRES);
+  // Matrix Q, not invertible
+  varf Mass([w,v],[w1,v1])=int1d(th,1)(w*w1);
+  matrix MassMat=Mass(WV,WV,solver=GMRES);
 
-// Sub-matrix M, but over the whole space. Invertible.
-varf Mass2([w,v],[w1,v1])=int1d(th,1)(w*w1+v*v1);
-matrix MassMat2=Mass2(WV,WV,solver=GMRES);
-{
-  real[int] diagofMat(MassMat2.n);
-  diagofMat=MassMat2.diag;
-  for(int ii=0; ii<MassMat2.n; ii++)
+  // Sub-matrix M, but over the whole space. Invertible.
+  varf Mass2([w,v],[w1,v1])=int1d(th,1)(w*w1+v*v1);
+  matrix MassMat2=Mass2(WV,WV,solver=GMRES);
   {
-	  if(repw[][ii]==0.)
-	  {
-		  diagofMat(ii)=1.e30;
-	  }
+    real[int] diagofMat(MassMat2.n);
+    diagofMat=MassMat2.diag;
+    for(int ii=0; ii<MassMat2.n; ii++)
+    {
+  	  if(repw[][ii]==0.)
+  	  {
+  		  diagofMat(ii)=1.e30;
+  	  }
+    }
+    MassMat2.diag=diagofMat;
   }
-  MassMat2.diag=diagofMat;
-}
 
-// Output matrix
-WV [uu,dummy];
-int lenXout = 1 + floor((maxXout - minXout)/stepXout);
-real [int, int] C(lenXout, WV.ndof);
-real Xout = minXout;
-int j     = 0;
-while (Xout <= maxXout)
-{
-  for(int i=0; i<WV.ndof; i++)	// loop on all degrees of freedon of u
+  // Output matrix
+  WV [uu,dummy];
+  int lenXout = 1 + floor((maxXout - minXout)/stepXout);
+  real [int, int] C(lenXout, WV.ndof);
+  real Xout = minXout;
+  int j     = 0;
+  while (Xout <= maxXout)
   {
-    uu[]      = 0;	         // set all degrees of freedom of u to zero, except the i th one
-    uu[][i]   = 1;
-    real mes  = uu(Xout,0);	 // measure uu at space point x = Xout, y = 0
-    C(j,i)    = mes;	       // store value in measurement matrix
+    for(int i=0; i<WV.ndof; i++)	// loop on all degrees of freedon of u
+    {
+      uu[]      = 0;	         // set all degrees of freedom of u to zero, except the i th one
+      uu[][i]   = 1;
+      real mes  = uu(Xout,0);	 // measure uu at space point x = Xout, y = 0
+      C(j,i)    = mes;	       // store value in measurement matrix
+    }
+    Xout += stepXout;
+    j = j+1;
   }
-  Xout += stepXout;
-  j = j+1;
-}
 
-// Save matrices
-{
- ofstream file("@MAT_A");
- file.precision(16);
- file << MatLNS << endl;
-}
+  // Save matrices
+  {
+   ofstream file("@MAT_A");
+   file.precision(16);
+   file << MatLNS << endl;
+  }
 
-{
- ofstream file("@MAT_Q");
- file.precision(16);
- file << MassMat << endl;
-}
+  {
+   ofstream file("@MAT_Q");
+   file.precision(16);
+   file << MassMat << endl;
+  }
 
-{
- ofstream file("@MAT_M");
- file.precision(16);
- file << MassMat2 << endl;
-}
+  {
+   ofstream file("@MAT_M");
+   file.precision(16);
+   file << MassMat2 << endl;
+  }
 
-{
- ofstream file("@MAT_DX");
- file.precision(16);
- file << MatDerx << endl;
-}
+  {
+   ofstream file("@MAT_DX");
+   file.precision(16);
+   file << MatDerx << endl;
+  }
 
-{
- ofstream file("@MAT_C");
- file.precision(16);
- file << C << endl;
+  {
+   ofstream file("@MAT_C");
+   file.precision(16);
+   file << C << endl;
+  }
 }
-
 {
 ofstream file("@VEC_BLOCKED");
 file.precision(16);
