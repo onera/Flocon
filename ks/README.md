@@ -36,7 +36,7 @@ x0 = ks.make_x0()
 Note that at this step, the variable `x0` is the one actually used by FreeFem, meaning that is also contains the fixed DOF. To have a graphical representation of a part the system, you may compute the output associated with the (initial) state
 
 ```python
-[y0 loc_y] = ks.get_y(x0)  
+[y0, loc_y] = ks.get_y(x0)  
 #
 plt.plot(loc_y, y0)
 plt.show()
@@ -45,6 +45,9 @@ plt.show()
 Based on the initial state, you may also launch a simulation which returns the time, the energy of the system and the output. This is done as follows,
 ```python
 [t, energy, y]= ks.simulate(x0)
+#
+plt.plot(t, energy) # retrieve the figure 5.c of the article
+plt.show()
 ```
 
 ## Acknowledgement  
